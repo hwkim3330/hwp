@@ -117,6 +117,61 @@ function textToSafeHtml(text) {
     .join("");
 }
 
+function htmlToStructuredText(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<div>${String(html || "")}</div>`, "text/html");
+  const lines = [];
+
+  function walk(node, indent = "") {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+      if (text) {
+        lines.push(`${indent}${text}`);
+      }
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return;
+    }
+
+    const tag = node.tagName.toUpperCase();
+    if (["H1", "H2", "H3", "P"].includes(tag)) {
+      const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+      if (text) {
+        lines.push(text);
+        lines.push("");
+      }
+      return;
+    }
+
+    if (tag === "LI") {
+      const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+      if (text) {
+        lines.push(`${indent}- ${text}`);
+      }
+      return;
+    }
+
+    if (tag === "TR") {
+      const cells = [...node.children]
+        .filter((child) => ["TH", "TD"].includes(child.tagName.toUpperCase()))
+        .map((child) => (child.textContent || "").replace(/\s+/g, " ").trim());
+      if (cells.length > 0) {
+        lines.push(cells.join(" | "));
+      }
+      return;
+    }
+
+    [...node.childNodes].forEach((child) => walk(child, indent));
+    if (["UL", "OL", "TABLE", "TBODY", "THEAD"].includes(tag)) {
+      lines.push("");
+    }
+  }
+
+  [...doc.body.firstChild.childNodes].forEach((child) => walk(child));
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function normalizeHtmlForRhwp(html) {
   const parser = new DOMParser();
   const source = String(html || "").replace(/<!--[\s\S]*?-->/g, "");
@@ -149,18 +204,95 @@ function normalizeHtmlForRhwp(html) {
   return normalized || "<p>내용 없음</p>";
 }
 
-function applyWriterHtml(section, paragraph, offset, html) {
-  const safeHtml = normalizeHtmlForRhwp(html);
+function safeParagraphCount() {
   try {
-    state.doc.pasteHtml(section, paragraph, offset, safeHtml);
+    return state.doc.getParagraphCount(0);
+  } catch {
+    return 1;
+  }
+}
+
+function clearWriterDocument() {
+  createBlankDocument();
+}
+
+function insertParagraphText(paraIndex, text) {
+  if (!text) {
     return;
-  } catch (error) {
-    console.warn("pasteHtml failed, falling back to plain text", error);
+  }
+  state.doc.insertText(0, paraIndex, 0, text);
+}
+
+function appendParagraphAfter(paraIndex) {
+  const length = getParagraphLength(0, paraIndex);
+  state.doc.splitParagraph(0, paraIndex, length);
+  return paraIndex + 1;
+}
+
+function replaceWriterWithText(text) {
+  clearWriterDocument();
+  const paragraphs = String(text || "")
+    .split(/\n{2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (paragraphs.length === 0) {
+    return;
   }
 
-  const plainText = new DOMParser().parseFromString(`<div>${safeHtml}</div>`, "text/html").body.textContent || "";
-  const fallbackHtml = textToSafeHtml(plainText);
-  state.doc.pasteHtml(section, paragraph, offset, fallbackHtml);
+  let paraIndex = 0;
+  paragraphs.forEach((paragraphText, index) => {
+    insertParagraphText(paraIndex, paragraphText);
+    if (index < paragraphs.length - 1) {
+      paraIndex = appendParagraphAfter(paraIndex);
+    }
+  });
+}
+
+function appendWriterText(text) {
+  const paragraphs = String(text || "")
+    .split(/\n{2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (paragraphs.length === 0) {
+    return;
+  }
+  let paraIndex = Math.max(0, safeParagraphCount() - 1);
+  let offset = getParagraphLength(0, paraIndex);
+  if (offset > 0) {
+    paraIndex = appendParagraphAfter(paraIndex);
+  }
+  paragraphs.forEach((paragraphText, index) => {
+    insertParagraphText(paraIndex, paragraphText);
+    if (index < paragraphs.length - 1) {
+      paraIndex = appendParagraphAfter(paraIndex);
+    }
+  });
+}
+
+function replaceParagraphWithText(section, paragraph, text) {
+  if (!paragraphExists(section, paragraph)) {
+    throw new Error(`문단 없음: ${section}:${paragraph}`);
+  }
+  const length = getParagraphLength(section, paragraph);
+  if (length > 0) {
+    state.doc.deleteText(section, paragraph, 0, length);
+  }
+  state.doc.insertText(section, paragraph, 0, text);
+}
+
+function applyWriterHtml(section, paragraph, offset, html, mode = "replace_all") {
+  const safeHtml = normalizeHtmlForRhwp(html);
+  const plainText = htmlToStructuredText(safeHtml);
+  if (mode === "replace_all") {
+    replaceWriterWithText(plainText);
+    return;
+  }
+  if (mode === "append") {
+    appendWriterText(plainText);
+    return;
+  }
+  replaceParagraphWithText(section, paragraph, plainText);
 }
 
 function createBlankDocument() {
@@ -185,12 +317,82 @@ function downloadText(text, fileName, mimeType = "text/plain;charset=utf-8") {
 }
 
 async function loadDocumentFromFile(file) {
+  const name = file.name.toLowerCase();
+  const extension = name.includes(".") ? name.split(".").pop() : "";
+
+  if (["txt", "md"].includes(extension)) {
+    const text = await file.text();
+    state.noteText = text;
+    elements.notesPad.value = text;
+    state.fileName = file.name;
+    setMode("notes");
+    persistWorkspace();
+    return;
+  }
+
+  if (extension === "csv") {
+    const text = await file.text();
+    const rows = text.trim().split(/\r?\n/).map((line) => line.split(",").map((item) => item.trim()));
+    const columns = rows[0] || SHEET_COLUMNS;
+    state.sheetRows = rows.slice(1).map((row) =>
+      columns.reduce((acc, column, index) => {
+        acc[column] = row[index] || "";
+        return acc;
+      }, {}),
+    );
+    state.fileName = file.name;
+    renderSheet();
+    setMode("sheet");
+    persistWorkspace();
+    return;
+  }
+
+  if (extension === "json") {
+    const text = await file.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed.slides)) {
+        state.slides = parsed.slides;
+        renderSlides();
+        setMode("slides");
+      } else {
+        state.noteText = JSON.stringify(parsed, null, 2);
+        elements.notesPad.value = state.noteText;
+        setMode("notes");
+      }
+    } catch {
+      state.noteText = text;
+      elements.notesPad.value = text;
+      setMode("notes");
+    }
+    state.fileName = file.name;
+    persistWorkspace();
+    return;
+  }
+
+  if (["docx", "xlsx", "pptx"].includes(extension)) {
+    const summary = [
+      `[가져온 파일] ${file.name}`,
+      "",
+      `형식: ${extension.toUpperCase()}`,
+      "현재 버전은 이 파일을 완전 편집형으로 파싱하지는 않습니다.",
+      "대신 이 작업공간에서 내용을 새로 작성하거나 요약 메모로 관리할 수 있습니다.",
+    ].join("\n");
+    state.noteText = summary;
+    elements.notesPad.value = summary;
+    state.fileName = file.name;
+    setMode("notes");
+    persistWorkspace();
+    return;
+  }
+
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (state.doc) {
     state.doc.free();
   }
   state.doc = new HwpDocument(bytes);
   state.fileName = file.name;
+  setMode("writer");
   persistWorkspace();
 }
 
@@ -470,8 +672,7 @@ function applyOperation(operation) {
   }
 
   if (operation.type === "set_document_html") {
-    createBlankDocument();
-    applyWriterHtml(0, 0, 0, operation.html);
+    applyWriterHtml(0, 0, 0, operation.html, "replace_all");
     persistWorkspace();
     return;
   }
@@ -480,7 +681,7 @@ function applyOperation(operation) {
     const summary = getDocumentSummary();
     const last = summary.paragraphs.at(-1) ?? { section: 0, paragraph: 0 };
     const offset = getParagraphLength(last.section, last.paragraph);
-    applyWriterHtml(last.section, last.paragraph, offset, operation.html);
+    applyWriterHtml(last.section, last.paragraph, offset, operation.html, "append");
     persistWorkspace();
     return;
   }
@@ -507,7 +708,7 @@ function applyOperation(operation) {
     if (length > 0) {
       state.doc.deleteText(operation.section, operation.paragraph, 0, length);
     }
-    applyWriterHtml(operation.section, operation.paragraph, 0, operation.html);
+    applyWriterHtml(operation.section, operation.paragraph, 0, operation.html, "replace_paragraph");
     persistWorkspace();
     return;
   }

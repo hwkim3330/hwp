@@ -24,6 +24,29 @@ python3 app.py
 
 브라우저에서 `http://127.0.0.1:8765`를 엽니다.
 
+## 데스크톱 앱 실행
+
+```bash
+cd /Users/parksik/office-agent-staff
+npm install
+npm run desktop
+```
+
+이 모드에서는 다음이 함께 동작합니다.
+
+- 독립 macOS 앱 창으로 Office Agent Staff 실행
+- 메뉴바에서 CPU / MEM / BAT 사용률 표시
+- 클릭 시 작은 시스템 모니터 팝오버 표시
+
+## macOS 패키징
+
+```bash
+cd /Users/parksik/office-agent-staff
+npm run package:mac
+```
+
+빌드 결과물은 `dist-electron/`에 생성됩니다.
+
 ## 환경 변수
 
 ```bash
@@ -41,6 +64,8 @@ export LLM_API_KEY=""
 - `static/index.html`: UI
 - `static/app.js`: rhwp 연동, 문서 스냅샷 추출, 에이전트 명령 실행
 - `static/styles.css`: 레이아웃/스타일
+- `electron/main.js`: Electron 데스크톱 셸 + 메뉴바 모니터
+- `electron/monitor.html`: 시스템 모니터 팝오버 UI
 
 ## 구현 메모
 
@@ -60,3 +85,4 @@ export LLM_API_KEY=""
 
 - 외부 HWP 문서를 부분 수정할 때 원본 복합 서식은 일부 잃을 수 있습니다.
 - 현재는 업무 문서 초안 생성과 단락 단위 수정에 최적화되어 있습니다.
+- `.docx/.xlsx/.pptx`는 아직 완전 파싱 편집이 아니라 가져오기 보조 수준입니다.

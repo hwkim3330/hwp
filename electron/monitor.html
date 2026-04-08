@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>System Monitor</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        background: linear-gradient(135deg, #fff8ef, #efe2d4);
+        color: #1f1a17;
+      }
+      .shell {
+        padding: 18px;
+      }
+      h1 {
+        margin: 0 0 14px;
+        font-size: 18px;
+      }
+      .grid {
+        display: grid;
+        gap: 12px;
+      }
+      .card {
+        background: rgba(255,255,255,0.72);
+        border: 1px solid rgba(69,50,31,0.12);
+        border-radius: 16px;
+        padding: 12px 14px;
+      }
+      .label {
+        font-size: 12px;
+        color: #6d6358;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .value {
+        margin-top: 4px;
+        font-size: 28px;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <h1>System Monitor</h1>
+      <div class="grid">
+        <div class="card">
+          <div class="label">CPU</div>
+          <div id="cpu" class="value">--%</div>
+        </div>
+        <div class="card">
+          <div class="label">Memory</div>
+          <div id="mem" class="value">--%</div>
+        </div>
+        <div class="card">
+          <div class="label">Battery</div>
+          <div id="batt" class="value">--</div>
+        </div>
+      </div>
+    </div>
+    <script>
+      const cpu = document.getElementById("cpu");
+      const mem = document.getElementById("mem");
+      const batt = document.getElementById("batt");
+      window.desktopMonitor.onStats((stats) => {
+        cpu.textContent = `${stats.cpu}%`;
+        mem.textContent = `${stats.mem}%`;
+        batt.textContent = stats.batt === null ? "AC" : `${stats.batt}%`;
+      });
+    </script>
+  </body>
+</html>

@@ -3,6 +3,8 @@
 import json
 import os
 import re
+import shutil
+import subprocess
 from html.parser import HTMLParser
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +21,7 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "gemma4:latest")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "20"))
 LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "900"))
+HWPFORGE_CMD = os.environ.get("HWPFORGE_CMD", "hwpforge")
 
 
 SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
@@ -731,19 +734,69 @@ def call_llm(user_prompt, document):
     return validate_plan(json.loads(extract_json_object(content)))
 
 
+def resolve_hwpforge_cmd():
+    explicit = Path(HWPFORGE_CMD).expanduser()
+    if explicit.is_file():
+        return str(explicit)
+    found = shutil.which(HWPFORGE_CMD)
+    if found:
+        return found
+    local_candidates = [
+        Path.home() / ".cargo" / "bin" / "hwpforge",
+        Path("/Users/parksik/office-agent-sources/HwpForge/target/debug/hwpforge"),
+        Path("/Users/parksik/office-agent-sources/HwpForge/target/debug/hwpforge-bindings-cli"),
+    ]
+    for candidate in local_candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def hwpforge_status():
+    command = resolve_hwpforge_cmd()
+    if not command:
+        return {"available": False, "command": None, "detail": "hwpforge CLI not found"}
+    try:
+        result = subprocess.run(
+            [command, "--help"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception as exc:
+        return {"available": False, "command": command, "detail": str(exc)}
+    return {
+        "available": result.returncode == 0,
+        "command": command,
+        "detail": (result.stdout or result.stderr).splitlines()[0] if (result.stdout or result.stderr) else "",
+    }
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
 
     def do_GET(self):
         if self.path == "/healthz":
-            self._send_json({"ok": True, "model": LLM_MODEL, "baseUrl": LLM_BASE_URL, "planner": "llm+fallback"})
+            self._send_json(
+                {
+                    "ok": True,
+                    "model": LLM_MODEL,
+                    "baseUrl": LLM_BASE_URL,
+                    "planner": "llm+fallback",
+                    "hwpforge": hwpforge_status(),
+                }
+            )
             return
         if self.path == "/":
             self.path = "/index.html"
         return super().do_GET()
 
     def do_POST(self):
+        if self.path == "/api/hwpforge/status":
+            self._send_json({"ok": True, "hwpforge": hwpforge_status()})
+            return
         if self.path != "/api/plan":
             self._send_json({"ok": False, "error": "not found"}, status=HTTPStatus.NOT_FOUND)
             return

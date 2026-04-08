@@ -37,6 +37,8 @@ npm run desktop
 - 독립 macOS 앱 창으로 Office Agent Staff 실행
 - 메뉴바에서 CPU / MEM / BAT 사용률 표시
 - 클릭 시 작은 시스템 모니터 팝오버 표시
+- GPU 모델 표시
+- NPU/ANE 사용량은 현재 Electron 빌드에서 측정 불가
 
 ## macOS 패키징
 
@@ -46,6 +48,17 @@ npm run package:mac
 ```
 
 빌드 결과물은 `dist-electron/`에 생성됩니다.
+
+## GitHub Releases 배포
+
+```bash
+cd /Users/parksik/office-agent-staff
+npm run package:mac
+npm run release:github
+```
+
+현재 기준으로는 `GitHub Releases`에 `dmg`와 `zip`을 올리는 방식이 가장 간단합니다.
+서명과 notarization이 없으면 Gatekeeper 경고가 날 수 있으니, 공개 배포 전에는 Apple Developer 인증서까지 붙이는 편이 안전합니다.
 
 ## 환경 변수
 
@@ -86,3 +99,4 @@ export LLM_API_KEY=""
 - 외부 HWP 문서를 부분 수정할 때 원본 복합 서식은 일부 잃을 수 있습니다.
 - 현재는 업무 문서 초안 생성과 단락 단위 수정에 최적화되어 있습니다.
 - `.docx/.xlsx/.pptx`는 아직 완전 파싱 편집이 아니라 가져오기 보조 수준입니다.
+- GPU 실시간 사용률과 NPU/ANE 사용률은 현재 공개 Node/Electron 경로만으로는 안정적으로 수집하지 못합니다.

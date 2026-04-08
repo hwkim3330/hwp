@@ -13,6 +13,11 @@ let monitorWindow = null;
 let tray = null;
 let serverProcess = null;
 let monitorTimer = null;
+let hardwareInfo = {
+  gpuLabel: "Unknown",
+  gpuLoad: null,
+  npuLabel: "Unavailable",
+};
 
 function createTrayImage() {
   const image = nativeImage.createEmpty();
@@ -130,7 +135,28 @@ async function fetchStats() {
   const cpu = Math.round(load.currentLoad);
   const mem = Math.round((memory.active / memory.total) * 100);
   const batt = battery.hasBattery ? Math.round(battery.percent) : null;
-  return { cpu, mem, batt };
+  return {
+    cpu,
+    mem,
+    batt,
+    gpuLabel: hardwareInfo.gpuLabel,
+    gpuLoad: hardwareInfo.gpuLoad,
+    npuLabel: hardwareInfo.npuLabel,
+  };
+}
+
+async function loadHardwareInfo() {
+  try {
+    const graphics = await si.graphics();
+    const primaryGpu = graphics.controllers.find((controller) => controller.model) || graphics.controllers[0];
+    if (primaryGpu) {
+      hardwareInfo.gpuLabel = primaryGpu.cores
+        ? `${primaryGpu.model} (${primaryGpu.cores} cores)`
+        : primaryGpu.model;
+    }
+  } catch (_error) {
+    hardwareInfo.gpuLabel = "Unavailable";
+  }
 }
 
 async function updateMonitor() {
@@ -183,6 +209,7 @@ function createTray() {
 
 async function bootstrap() {
   await startServer();
+  await loadHardwareInfo();
   createMainWindow();
   createMonitorWindow();
   createTray();

@@ -39,6 +39,12 @@
         font-size: 28px;
         font-weight: 700;
       }
+      .meta {
+        margin-top: 6px;
+        font-size: 13px;
+        color: #6d6358;
+        line-height: 1.4;
+      }
     </style>
   </head>
   <body>
@@ -57,16 +63,34 @@
           <div class="label">Battery</div>
           <div id="batt" class="value">--</div>
         </div>
+        <div class="card">
+          <div class="label">GPU</div>
+          <div id="gpu" class="value">--</div>
+          <div id="gpu-meta" class="meta">Realtime GPU load unavailable on this build.</div>
+        </div>
+        <div class="card">
+          <div class="label">NPU / ANE</div>
+          <div id="npu" class="value">--</div>
+          <div class="meta">Apple Neural Engine usage is not exposed by the current Electron stack.</div>
+        </div>
       </div>
     </div>
     <script>
       const cpu = document.getElementById("cpu");
       const mem = document.getElementById("mem");
       const batt = document.getElementById("batt");
+      const gpu = document.getElementById("gpu");
+      const gpuMeta = document.getElementById("gpu-meta");
+      const npu = document.getElementById("npu");
       window.desktopMonitor.onStats((stats) => {
         cpu.textContent = `${stats.cpu}%`;
         mem.textContent = `${stats.mem}%`;
         batt.textContent = stats.batt === null ? "AC" : `${stats.batt}%`;
+        gpu.textContent = stats.gpuLoad === null ? stats.gpuLabel : `${stats.gpuLoad}%`;
+        gpuMeta.textContent = stats.gpuLoad === null
+          ? `${stats.gpuLabel} detected, realtime GPU load unavailable on this build.`
+          : stats.gpuLabel;
+        npu.textContent = stats.npuLabel;
       });
     </script>
   </body>

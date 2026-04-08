@@ -26,9 +26,13 @@ SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
 - 자연어 설명만 하지 말고 실제 편집 계획을 함께 반환한다.
 
 편집 원칙:
+- 현재 작업 모드(mode)에 맞는 출력을 우선한다.
 - 표, 제목, 번호 목록, 강조가 필요하면 HTML로 표현한다.
 - 문서를 전면 재작성할 필요가 있으면 set_document_html을 사용한다.
 - 기존 문서의 일부만 고치면 replace_paragraph_text 또는 replace_paragraph_html을 사용한다.
+- notes 모드에서는 set_note_text를 사용한다.
+- sheet 모드에서는 set_sheet_data를 사용한다.
+- slides 모드에서는 set_slides를 사용한다.
 - 별도 수정이 불필요하면 no_op를 사용한다.
 - 사실을 지어내지 말고, 사용자의 요청이 불명확하면 보수적으로 문안을 만든다.
 
@@ -57,6 +61,23 @@ SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
       "html": "<p><strong>수정</strong> 문단</p>"
     },
     {
+      "type": "set_note_text",
+      "text": "메모장 전체 내용"
+    },
+    {
+      "type": "set_sheet_data",
+      "columns": ["항목", "담당", "상태"],
+      "rows": [
+        {"항목": "업무 1", "담당": "홍길동", "상태": "진행중"}
+      ]
+    },
+    {
+      "type": "set_slides",
+      "slides": [
+        {"title": "제목", "bullets": ["핵심 1", "핵심 2"]}
+      ]
+    },
+    {
       "type": "no_op",
       "reason": "변경할 내용 없음"
     }
@@ -68,6 +89,9 @@ SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
 - operations는 반드시 배열.
 - 문단 인덱스는 제공된 스냅샷 기준을 사용한다.
 - HTML은 table, thead, tbody, tr, th, td, h1, h2, h3, p, ul, ol, li, strong, em, br만 사용한다.
+- notes는 일반 텍스트만 사용한다.
+- sheet rows는 columns 키와 맞는 객체 배열로 반환한다.
+- slides는 title 문자열과 bullets 문자열 배열을 사용한다.
 """
 
 
@@ -90,6 +114,29 @@ def compact_document(document):
         "paragraphCount": len(paragraphs),
         "paragraphs": compact_paragraphs,
     }
+
+
+def compact_sheet(sheet):
+    columns = [str(column) for column in sheet.get("columns", [])[:16]]
+    rows = []
+    for item in sheet.get("rows", [])[:50]:
+        if not isinstance(item, dict):
+            continue
+        row = {}
+        for column in columns[:16]:
+            row[column] = str(item.get(column, ""))[:400]
+        rows.append(row)
+    return {"columns": columns, "rows": rows}
+
+
+def compact_slides(slides):
+    compact = []
+    for item in slides[:20]:
+        if not isinstance(item, dict):
+            continue
+        bullets = [str(bullet)[:300] for bullet in item.get("bullets", [])[:8]]
+        compact.append({"title": str(item.get("title", ""))[:200], "bullets": bullets})
+    return compact
 
 
 def extract_json_object(text):
@@ -136,6 +183,31 @@ def validate_plan(plan):
                     "html": str(op.get("html", "")),
                 }
             )
+        elif op_type == "set_note_text":
+            cleaned.append({"type": op_type, "text": str(op.get("text", ""))})
+        elif op_type == "set_sheet_data":
+            columns = [str(column) for column in op.get("columns", [])[:16]]
+            rows = []
+            for item in op.get("rows", [])[:100]:
+                if not isinstance(item, dict):
+                    continue
+                row = {}
+                for column in columns:
+                    row[column] = str(item.get(column, ""))
+                rows.append(row)
+            cleaned.append({"type": op_type, "columns": columns, "rows": rows})
+        elif op_type == "set_slides":
+            slides = []
+            for slide in op.get("slides", [])[:20]:
+                if not isinstance(slide, dict):
+                    continue
+                slides.append(
+                    {
+                        "title": str(slide.get("title", "")),
+                        "bullets": [str(bullet) for bullet in slide.get("bullets", [])[:10]],
+                    }
+                )
+            cleaned.append({"type": op_type, "slides": slides})
         elif op_type == "no_op":
             cleaned.append({"type": op_type, "reason": str(op.get("reason", ""))})
 
@@ -273,9 +345,98 @@ def build_polish_html(document):
     )
 
 
-def fallback_plan(user_prompt, document, reason):
+def build_note_text(prompt, workspace):
+    current = str(workspace.get("noteText", "")).strip()
+    header = f"[메모] {prompt.strip()}"
+    sections = [header, "", "핵심 메모", "- 배경 정리", "- 해야 할 일", "- 확인 필요 사항"]
+    if current:
+        sections.extend(["", "기존 메모 참고", current[:1500]])
+    return "\n".join(sections).strip()
+
+
+def build_sheet_data(prompt):
+    columns = ["항목", "담당", "상태", "기한", "우선순위", "비고"]
+    rows = [
+        {"항목": "요청 분석", "담당": "본인", "상태": "완료", "기한": "즉시", "우선순위": "상", "비고": prompt[:80]},
+        {"항목": "실행 계획 수립", "담당": "담당자 지정", "상태": "진행중", "기한": "오늘", "우선순위": "상", "비고": "세부 일정 확정 필요"},
+        {"항목": "결과 검토", "담당": "검토자", "상태": "대기", "기한": "차주", "우선순위": "중", "비고": "리스크 재확인"},
+    ]
+    return {"columns": columns, "rows": rows}
+
+
+def build_slides_data(prompt):
+    base = prompt.strip() or "오피스 에이전트 업무 제안"
+    return [
+        {"title": "개요", "bullets": [base, "목적과 배경", "핵심 메시지"]},
+        {"title": "현황", "bullets": ["현재 문제 정의", "주요 병목", "영향 범위"]},
+        {"title": "해결안", "bullets": ["제안 방식", "기대 효과", "필요 자원"]},
+        {"title": "실행 계획", "bullets": ["단계별 일정", "담당 역할", "다음 액션"]},
+    ]
+
+
+def is_mode_compatible(mode, operations):
+    allowed_map = {
+        "writer": {"set_document_html", "append_html", "replace_paragraph_text", "replace_paragraph_html", "no_op"},
+        "notes": {"set_note_text", "no_op"},
+        "sheet": {"set_sheet_data", "no_op"},
+        "slides": {"set_slides", "no_op"},
+    }
+    allowed = allowed_map.get(mode, allowed_map["writer"])
+    return any(op.get("type") in allowed and op.get("type") != "no_op" for op in operations)
+
+
+def finalize_plan(mode, user_prompt, document, workspace, plan):
+    operations = plan.get("operations", [])
+    if is_mode_compatible(mode, operations):
+        return plan
+
+    if mode == "notes" and all(op.get("type") == "no_op" for op in operations):
+        return {
+            "reply": "메모장 초안을 생성했습니다.",
+            "operations": [{"type": "set_note_text", "text": build_note_text(user_prompt, workspace)}],
+        }
+    if mode == "sheet":
+        sheet = build_sheet_data(user_prompt)
+        return {
+            "reply": "시트 초안을 생성했습니다.",
+            "operations": [{"type": "set_sheet_data", "columns": sheet["columns"], "rows": sheet["rows"]}],
+        }
+    if mode == "slides":
+        return {
+            "reply": "슬라이드 초안을 생성했습니다.",
+            "operations": [{"type": "set_slides", "slides": build_slides_data(user_prompt)}],
+        }
+    if mode == "writer" and all(op.get("type") == "no_op" for op in operations):
+        return fallback_plan(user_prompt, document, workspace, "writer_noop_promoted")
+    return plan
+
+
+def fallback_plan(user_prompt, document, workspace, reason):
     prompt = user_prompt.strip()
     prompt_lower = prompt.lower()
+    mode = str(workspace.get("mode", "writer"))
+
+    if mode == "notes":
+        return {
+            "reply": "메모장 초안을 생성했습니다. 오프라인 플래너를 사용했습니다.",
+            "operations": [{"type": "set_note_text", "text": build_note_text(prompt, workspace)}],
+            "meta": {"planner": "fallback", "reason": reason},
+        }
+
+    if mode == "sheet":
+        sheet = build_sheet_data(prompt)
+        return {
+            "reply": "시트 초안을 생성했습니다. 오프라인 플래너를 사용했습니다.",
+            "operations": [{"type": "set_sheet_data", "columns": sheet["columns"], "rows": sheet["rows"]}],
+            "meta": {"planner": "fallback", "reason": reason},
+        }
+
+    if mode == "slides":
+        return {
+            "reply": "슬라이드 초안을 생성했습니다. 오프라인 플래너를 사용했습니다.",
+            "operations": [{"type": "set_slides", "slides": build_slides_data(prompt)}],
+            "meta": {"planner": "fallback", "reason": reason},
+        }
 
     if any(keyword in prompt for keyword in ("주간업무보고", "주간 보고", "업무보고")):
         html = build_weekly_report_html()
@@ -330,6 +491,12 @@ def call_llm(user_prompt, document):
                     {
                         "user_request": user_prompt,
                         "document": compact_document(document),
+                        "mode": document.get("mode", "writer"),
+                        "workspace": {
+                            "noteText": str(document.get("noteText", ""))[:3000],
+                            "sheet": compact_sheet(document.get("sheet", {})),
+                            "slides": compact_slides(document.get("slides", [])),
+                        },
                     },
                     ensure_ascii=False,
                 ),
@@ -378,13 +545,21 @@ class Handler(SimpleHTTPRequestHandler):
             payload = json.loads(body)
             user_prompt = str(payload.get("prompt", "")).strip()
             document = payload.get("document", {})
+            workspace = {
+                "mode": payload.get("mode", "writer"),
+                "noteText": payload.get("noteText", ""),
+                "sheet": payload.get("sheet", {}),
+                "slides": payload.get("slides", []),
+            }
             if not user_prompt:
                 raise ValueError("prompt is required")
             try:
-                plan = call_llm(user_prompt, document)
+                llm_document = {**document, **workspace}
+                plan = call_llm(user_prompt, llm_document)
+                plan = finalize_plan(workspace["mode"], user_prompt, document, workspace, plan)
                 plan = {**plan, "meta": {"planner": "llm"}}
             except (error.HTTPError, error.URLError, TimeoutError, ValueError, KeyError, json.JSONDecodeError) as exc:
-                plan = fallback_plan(user_prompt, document, str(exc))
+                plan = fallback_plan(user_prompt, document, workspace, str(exc))
             self._send_json({"ok": True, "plan": plan})
         except Exception as exc:
             self._send_json(

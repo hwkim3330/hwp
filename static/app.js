@@ -27,6 +27,7 @@ const elements = {
   outlineBox: document.querySelector("#outline-box"),
   statusBox: document.querySelector("#status-box"),
   renderBadge: document.querySelector("#render-badge"),
+  modeHint: document.querySelector("#mode-hint"),
   pages: document.querySelector("#pages"),
   promptInput: document.querySelector("#prompt-input"),
   runAgent: document.querySelector("#run-agent"),
@@ -45,6 +46,8 @@ const state = {
   sheetRows: [],
   slides: [],
 };
+
+const STORAGE_KEY = "office-agent-staff-state-v1";
 
 const SHEET_COLUMNS = ["항목", "담당", "상태", "기한", "우선순위", "비고"];
 
@@ -88,6 +91,8 @@ function setMode(mode) {
   );
   map[mode][0].classList.add("active");
   map[mode][1].classList.add("active");
+  elements.modeHint.textContent = `현재 대상: ${mode[0].toUpperCase()}${mode.slice(1)}`;
+  persistWorkspace();
 }
 
 function parseJson(value) {
@@ -113,6 +118,7 @@ function createBlankDocument() {
   doc.createBlankDocument();
   state.doc = doc;
   state.fileName = "untitled.hwp";
+  persistWorkspace();
 }
 
 function downloadText(text, fileName, mimeType = "text/plain;charset=utf-8") {
@@ -132,6 +138,7 @@ async function loadDocumentFromFile(file) {
   }
   state.doc = new HwpDocument(bytes);
   state.fileName = file.name;
+  persistWorkspace();
 }
 
 function downloadBytes(bytes, fileName) {
@@ -151,6 +158,7 @@ function resetSheetData() {
       return acc;
     }, {}),
   );
+  persistWorkspace();
 }
 
 function renderSheet() {
@@ -181,6 +189,7 @@ function renderSheet() {
       td.textContent = row[column] || "";
       td.addEventListener("input", () => {
         state.sheetRows[rowIndex][column] = td.textContent ?? "";
+        persistWorkspace();
       });
       tr.append(td);
     });
@@ -211,6 +220,7 @@ function generateSlidesFromPrompt(prompt) {
     { title: "마무리", bullets: ["결정 필요 사항", "다음 액션", "질의응답"] },
   ];
   renderSlides();
+  persistWorkspace();
 }
 
 function renderSlides() {
@@ -232,6 +242,48 @@ function renderSlides() {
     });
     elements.slidesDeck.append(card);
   });
+}
+
+function createWorkspaceSnapshot() {
+  return {
+    mode: state.mode,
+    fileName: state.fileName,
+    noteText: elements.notesPad.value,
+    sheet: {
+      columns: SHEET_COLUMNS,
+      rows: state.sheetRows,
+    },
+    slides: state.slides,
+  };
+}
+
+function persistWorkspace() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(createWorkspaceSnapshot()));
+  } catch {}
+}
+
+function restoreWorkspace() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+    const saved = JSON.parse(raw);
+    if (typeof saved.noteText === "string") {
+      state.noteText = saved.noteText;
+      elements.notesPad.value = saved.noteText;
+    }
+    if (saved.sheet?.rows && Array.isArray(saved.sheet.rows)) {
+      state.sheetRows = saved.sheet.rows;
+    }
+    if (Array.isArray(saved.slides)) {
+      state.slides = saved.slides;
+    }
+    if (typeof saved.mode === "string") {
+      state.mode = saved.mode;
+    }
+  } catch {}
 }
 
 function exportSlidesMarkdown() {
@@ -360,7 +412,7 @@ function paragraphExists(section, paragraph) {
 }
 
 function applyOperation(operation) {
-  if (!state.doc) {
+  if (!state.doc && ["set_document_html", "append_html", "replace_paragraph_text", "replace_paragraph_html"].includes(operation.type)) {
     throw new Error("문서가 로드되지 않았습니다.");
   }
 
@@ -401,6 +453,36 @@ function applyOperation(operation) {
       state.doc.deleteText(operation.section, operation.paragraph, 0, length);
     }
     state.doc.pasteHtml(operation.section, operation.paragraph, 0, operation.html);
+    persistWorkspace();
+    return;
+  }
+
+  if (operation.type === "set_note_text") {
+    state.noteText = operation.text ?? "";
+    elements.notesPad.value = state.noteText;
+    persistWorkspace();
+    return;
+  }
+
+  if (operation.type === "set_sheet_data") {
+    if (Array.isArray(operation.rows) && operation.rows.length > 0) {
+      state.sheetRows = operation.rows.map((row) => {
+        const normalized = {};
+        (operation.columns || SHEET_COLUMNS).forEach((column) => {
+          normalized[column] = row[column] ?? "";
+        });
+        return normalized;
+      });
+      renderSheet();
+    }
+    persistWorkspace();
+    return;
+  }
+
+  if (operation.type === "set_slides") {
+    state.slides = Array.isArray(operation.slides) ? operation.slides : [];
+    renderSlides();
+    persistWorkspace();
     return;
   }
 }
@@ -430,6 +512,13 @@ async function runAgent() {
     const payload = {
       prompt,
       document: getDocumentSummary(),
+      mode: state.mode,
+      noteText: elements.notesPad.value,
+      sheet: {
+        columns: SHEET_COLUMNS,
+        rows: state.sheetRows,
+      },
+      slides: state.slides,
     };
     const response = await fetch("/api/plan", {
       method: "POST",
@@ -456,6 +545,13 @@ async function runAgent() {
     if (state.mode === "slides" && state.slides.length === 0) {
       generateSlidesFromPrompt(prompt);
     }
+    if (state.mode === "notes") {
+      setMode("notes");
+    } else if (state.mode === "sheet") {
+      setMode("sheet");
+    } else if (state.mode === "slides") {
+      setMode("slides");
+    }
     elements.reply.innerHTML = `<p>${escapeHtml(plan.reply || "작업을 적용했습니다.")}</p>`;
     setBadge("적용 완료");
     setStatus(
@@ -478,10 +574,14 @@ async function boot() {
   await init({ module_or_path: WASM_URL });
   state.ready = true;
   createBlankDocument();
-  resetSheetData();
+  restoreWorkspace();
+  if (state.sheetRows.length === 0) {
+    resetSheetData();
+  }
   renderSheet();
   renderSlides();
   await refreshDocumentView();
+  setMode(state.mode || "writer");
   setStatus(
     "준비 완료",
     "HWP/HWPX 파일을 열거나 오른쪽 에이전트에 업무 문서 요청을 입력하면 됩니다.",
@@ -506,10 +606,12 @@ elements.newNote.addEventListener("click", () => {
   elements.notesPad.value = "";
   setMode("notes");
   setStatus("새 메모를 시작했습니다.");
+  persistWorkspace();
 });
 
 elements.notesPad.addEventListener("input", () => {
   state.noteText = elements.notesPad.value;
+  persistWorkspace();
 });
 
 elements.exportNote.addEventListener("click", () => {
@@ -522,6 +624,7 @@ elements.resetSheet.addEventListener("click", () => {
   renderSheet();
   setMode("sheet");
   setStatus("시트를 초기화했습니다.");
+  persistWorkspace();
 });
 
 elements.exportSheet.addEventListener("click", () => {

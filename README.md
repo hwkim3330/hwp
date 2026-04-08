@@ -11,6 +11,9 @@
 - HWP 파일 다시 저장
 - OpenAI 호환 API 또는 Ollama 연결
 - LLM 미연결 시 오프라인 문서 초안 생성 fallback
+- `Writer / Notes / Sheet / Slides` 워크스테이션
+- 현재 탭 기준 모드별 에이전트 생성
+- 브라우저 로컬 저장 복원
 
 ## 실행
 
@@ -48,6 +51,9 @@ export LLM_API_KEY=""
   - `append_html`
   - `replace_paragraph_text`
   - `replace_paragraph_html`
+  - `set_note_text`
+  - `set_sheet_data`
+  - `set_slides`
   - `no_op`
 
 ## 한계

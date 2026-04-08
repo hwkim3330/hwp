@@ -249,6 +249,12 @@
           <div id="npu" class="tiny">NPU: --</div>
         </article>
 
+        <article class="card">
+          <div class="label">Gemma / Ollama</div>
+          <div id="llm" class="value">--</div>
+          <div id="llm-meta" class="meta">로컬 모델 상태 확인 중</div>
+        </article>
+
         <article class="card wide">
           <div class="label">Core Activity</div>
           <div id="spark-grid" class="spark-grid"></div>
@@ -291,6 +297,8 @@
       const npu = document.getElementById("npu");
       const net = document.getElementById("net");
       const disk = document.getElementById("disk");
+      const llm = document.getElementById("llm");
+      const llmMeta = document.getElementById("llm-meta");
       const sparkGrid = document.getElementById("spark-grid");
 
       for (let index = 0; index < 16; index += 1) {
@@ -353,6 +361,11 @@
           ? `${stats.gpuLabel} 감지됨. 실시간 GPU 퍼센트는 현재 미지원`
           : stats.gpuLabel;
         npu.textContent = `NPU: ${stats.npuLabel}`;
+
+        llm.textContent = stats.llm?.active ? "RUN" : "IDLE";
+        llmMeta.textContent = stats.llm?.active
+          ? `${stats.llm.name} · ${stats.llm.processor}`
+          : `${stats.llm?.name || "gemma4:latest"} 대기 중`;
 
         net.textContent = `↓ ${formatRate(stats.netRxPerSec)} ↑ ${formatRate(stats.netTxPerSec)}`;
         disk.textContent = `R ${formatRate(stats.diskReadPerSec)} W ${formatRate(stats.diskWritePerSec)}`;

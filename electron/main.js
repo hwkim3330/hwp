@@ -24,24 +24,62 @@ let previousSample = null;
 function monitorMood(stats) {
   const stress = Math.max(stats.cpu, stats.mem);
   if (stress >= 90) {
-    return { emoji: "🔥", face: "x_x", label: "critical" };
+    return { emoji: "🙀", face: "x_x", label: "critical" };
   }
   if (stress >= 75) {
-    return { emoji: "😵", face: ">_<", label: "busy" };
+    return { emoji: "😿", face: ">_<", label: "busy" };
   }
   if (stress >= 55) {
     return { emoji: "😼", face: "^_^", label: "active" };
   }
   if (stress >= 30) {
-    return { emoji: "🙂", face: "o_o", label: "steady" };
+    return { emoji: "😺", face: "o_o", label: "steady" };
   }
-  return { emoji: "😴", face: "-_-", label: "idle" };
+  return { emoji: "😸", face: "-_-", label: "idle" };
 }
 
 function createTrayImage() {
   const image = nativeImage.createEmpty();
   image.setTemplateImage(true);
   return image;
+}
+
+function requestJson(url, method = "GET", body = null, timeoutMs = 1500) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const req = http.request(
+      {
+        protocol: target.protocol,
+        hostname: target.hostname,
+        port: target.port,
+        path: `${target.pathname}${target.search}`,
+        method,
+        headers: body ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } : {},
+      },
+      (res) => {
+        let raw = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          raw += chunk;
+        });
+        res.on("end", () => {
+          try {
+            resolve(raw ? JSON.parse(raw) : {});
+          } catch (error) {
+            reject(error);
+          }
+        });
+      },
+    );
+    req.on("error", reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error("request timed out"));
+    });
+    if (body) {
+      req.write(body);
+    }
+    req.end();
+  });
 }
 
 function waitForServer(url, timeoutMs = 30000) {
@@ -166,12 +204,13 @@ function createVisionWindow() {
 }
 
 async function fetchStats() {
-  const [load, memory, battery, fsStats, networkStats] = await Promise.all([
+  const [load, memory, battery, fsStats, networkStats, ollamaPs] = await Promise.all([
     si.currentLoad(),
     si.mem(),
     si.battery(),
     si.fsStats(),
     si.networkStats(),
+    requestJson("http://127.0.0.1:11434/api/ps").catch(() => ({ models: [] })),
   ]);
 
   const cpu = Math.round(load.currentLoad);
@@ -214,6 +253,19 @@ async function fetchStats() {
     diskReadPerSec: Math.round(diskReadPerSec),
     diskWritePerSec: Math.round(diskWritePerSec),
     cpuCores: Array.isArray(load.cpus) ? load.cpus.map((item) => Math.round(item.load || 0)) : [],
+    llm: Array.isArray(ollamaPs.models) && ollamaPs.models.length > 0
+      ? {
+          active: true,
+          name: ollamaPs.models[0].name || "unknown",
+          processor: ollamaPs.models[0].processor || "unknown",
+          size: ollamaPs.models[0].size || "",
+        }
+      : {
+          active: false,
+          name: "gemma4:latest",
+          processor: "idle",
+          size: "",
+        },
     gpuLabel: hardwareInfo.gpuLabel,
     gpuLoad: hardwareInfo.gpuLoad,
     npuLabel: hardwareInfo.npuLabel,

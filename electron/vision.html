@@ -185,6 +185,62 @@
         margin-bottom: 6px;
       }
 
+      .lab-stage {
+        position: relative;
+        margin-top: 14px;
+        aspect-ratio: 16 / 10;
+        border-radius: 20px;
+        overflow: hidden;
+        background: #1e1814;
+        border: 1px solid rgba(255,255,255,0.08);
+      }
+
+      video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        transform: scaleX(-1);
+      }
+
+      .reticle {
+        position: absolute;
+        inset: 50% auto auto 50%;
+        width: 180px;
+        height: 180px;
+        transform: translate(-50%, -50%);
+        border: 2px solid rgba(255,255,255,0.78);
+        border-radius: 28px;
+        box-shadow: 0 0 0 9999px rgba(0,0,0,0.14);
+        pointer-events: none;
+      }
+
+      .dot {
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        background: #8df0c1;
+        border: 2px solid rgba(9,36,25,0.45);
+        transform: translate(-50%, -50%);
+        box-shadow: 0 0 18px rgba(141,240,193,0.55);
+        pointer-events: none;
+      }
+
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.74);
+        border: 1px solid var(--line);
+        font-size: 12px;
+        font-weight: 700;
+        color: #2b241e;
+      }
+
       @media (max-width: 860px) {
         .hero {
           grid-template-columns: 1fr;
@@ -276,9 +332,26 @@
         </article>
 
         <article class="card wide">
+          <span class="tag good">실험실</span>
+          <h2>Camera Lab</h2>
+          <p>내장 웹캠으로 얼굴 중심 정렬 실험을 합니다. `FaceDetector`가 가능한 환경이면 얼굴 박스를 보고, 아니면 카메라 미리보기와 정렬 가이드만 제공합니다.</p>
+          <div class="button-row">
+            <button id="start-camera">카메라 시작</button>
+            <button id="stop-camera" class="secondary">카메라 정지</button>
+          </div>
+          <div id="camera-chip" class="status-chip">카메라 대기 중</div>
+          <div class="lab-stage">
+            <video id="camera" autoplay playsinline muted></video>
+            <div class="reticle"></div>
+            <div id="face-dot" class="dot" style="left:50%; top:50%; opacity:0;"></div>
+          </div>
+          <div id="camera-meta" class="meta">MacBook Pro Camera 감지. 공개 macOS 기준으로는 표준 웹캠 경로만 사용 가능합니다.</div>
+        </article>
+
+        <article class="card wide">
           <span class="tag warn">비공식 센서</span>
           <h2>Lid Angle Sensor</h2>
-          <p>화면 기울기 기반 제어는 가능성이 있지만 공식 API가 아니라 실험 레벨로 다뤄야 합니다.</p>
+          <p>이 맥에선 공개 경로로 lid angle이 바로 잡히지 않았습니다. 화면 기울기 기반 제어는 여전히 비공식 센서 프로젝트를 통해 실험하는 편이 맞습니다.</p>
           <ul class="flat-list">
             <li>IOHIDManager 기반 숨겨진 lid angle 센서 접근</li>
             <li>macOS 업데이트 / 모델별 차이로 깨질 수 있음</li>
@@ -303,6 +376,71 @@
     </div>
 
     <script>
+      const startCamera = document.getElementById("start-camera");
+      const stopCamera = document.getElementById("stop-camera");
+      const camera = document.getElementById("camera");
+      const cameraMeta = document.getElementById("camera-meta");
+      const cameraChip = document.getElementById("camera-chip");
+      const faceDot = document.getElementById("face-dot");
+      let stream = null;
+      let faceTimer = null;
+
+      function stopCameraLab() {
+        if (faceTimer) {
+          clearInterval(faceTimer);
+          faceTimer = null;
+        }
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+          stream = null;
+        }
+        camera.srcObject = null;
+        faceDot.style.opacity = "0";
+        cameraChip.textContent = "카메라 대기 중";
+      }
+
+      async function startCameraLab() {
+        stopCameraLab();
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const preferred = devices.find((device) => device.kind === "videoinput" && /MacBook Pro Camera/i.test(device.label))
+          || devices.find((device) => device.kind === "videoinput");
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: preferred ? { deviceId: { exact: preferred.deviceId } } : true,
+          audio: false,
+        });
+        camera.srcObject = stream;
+        cameraChip.textContent = preferred ? `활성 카메라: ${preferred.label || "videoinput"}` : "카메라 활성";
+        cameraMeta.textContent = "가운데 프레임 안에 얼굴을 맞추면 Head Pointer 사용 자세를 미리 점검할 수 있습니다.";
+
+        if ("FaceDetector" in window) {
+          const detector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+          faceTimer = setInterval(async () => {
+            try {
+              const faces = await detector.detect(camera);
+              const face = faces[0];
+              if (!face) {
+                faceDot.style.opacity = "0";
+                cameraChip.textContent = "얼굴 탐지 대기 중";
+                return;
+              }
+              const { x, y, width, height } = face.boundingBox;
+              const cx = ((x + width / 2) / camera.videoWidth) * 100;
+              const cy = ((y + height / 2) / camera.videoHeight) * 100;
+              faceDot.style.left = `${100 - cx}%`;
+              faceDot.style.top = `${cy}%`;
+              faceDot.style.opacity = "1";
+              const offsetX = Math.abs(cx - 50);
+              const offsetY = Math.abs(cy - 50);
+              cameraChip.textContent = offsetX < 10 && offsetY < 10 ? "얼굴 정렬 양호" : "얼굴을 조금 더 중앙으로";
+            } catch {
+              cameraChip.textContent = "카메라 분석 중";
+            }
+          }, 250);
+        } else {
+          cameraChip.textContent = "미리보기만 가능 · FaceDetector 미지원";
+        }
+      }
+
       document.querySelectorAll("[data-resource]").forEach((button) => {
         button.addEventListener("click", async () => {
           try {
@@ -311,6 +449,17 @@
             console.error(error);
           }
         });
+      });
+
+      startCamera.addEventListener("click", () => {
+        startCameraLab().catch((error) => {
+          cameraChip.textContent = "카메라 접근 실패";
+          cameraMeta.textContent = String(error.message || error);
+        });
+      });
+
+      stopCamera.addEventListener("click", () => {
+        stopCameraLab();
       });
     </script>
   </body>

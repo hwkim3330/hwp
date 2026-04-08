@@ -31,6 +31,7 @@ const elements = {
   outlineBox: document.querySelector("#outline-box"),
   statusBox: document.querySelector("#status-box"),
   renderBadge: document.querySelector("#render-badge"),
+  agentRuntime: document.querySelector("#agent-runtime"),
   modeHint: document.querySelector("#mode-hint"),
   pages: document.querySelector("#pages"),
   promptInput: document.querySelector("#prompt-input"),
@@ -38,6 +39,10 @@ const elements = {
   reply: document.querySelector("#agent-reply"),
   planBox: document.querySelector("#plan-box"),
   plannerMeta: document.querySelector("#planner-meta"),
+  capLlm: document.querySelector("#cap-llm"),
+  capLlmMeta: document.querySelector("#cap-llm-meta"),
+  capHwpforge: document.querySelector("#cap-hwpforge"),
+  capHwpforgeMeta: document.querySelector("#cap-hwpforge-meta"),
   promptChips: [...document.querySelectorAll(".prompt-chip")],
 };
 
@@ -79,6 +84,12 @@ function setBadge(message) {
   elements.renderBadge.textContent = message;
 }
 
+function setRuntimeBadge(message) {
+  if (elements.agentRuntime) {
+    elements.agentRuntime.textContent = message;
+  }
+}
+
 function setMode(mode) {
   state.mode = mode;
   const map = {
@@ -98,6 +109,32 @@ function setMode(mode) {
   map[mode][1].classList.add("active");
   elements.modeHint.textContent = `현재 대상: ${mode[0].toUpperCase()}${mode.slice(1)}`;
   persistWorkspace();
+}
+
+async function refreshAgentHealth() {
+  try {
+    const response = await fetch("/healthz", { cache: "no-store" });
+    const health = await response.json();
+    if (!health.ok) {
+      throw new Error("health unavailable");
+    }
+    elements.capLlm.textContent = health.model || "unknown";
+    elements.capLlmMeta.textContent = health.baseUrl || "LLM endpoint unavailable";
+    if (health.hwpforge?.available) {
+      elements.capHwpforge.textContent = "ready";
+      elements.capHwpforgeMeta.textContent = health.hwpforge.command || "hwpforge";
+    } else {
+      elements.capHwpforge.textContent = "offline";
+      elements.capHwpforgeMeta.textContent = health.hwpforge?.detail || "hwpforge unavailable";
+    }
+    setRuntimeBadge(health.hwpforge?.available ? "Local Ops Ready" : "Partial Local Mode");
+  } catch (error) {
+    elements.capLlm.textContent = "offline";
+    elements.capLlmMeta.textContent = "health check failed";
+    elements.capHwpforge.textContent = "unknown";
+    elements.capHwpforgeMeta.textContent = String(error.message || error);
+    setRuntimeBadge("Offline");
+  }
 }
 
 function parseJson(value) {
@@ -1498,6 +1535,7 @@ async function boot() {
   installMeasureTextWidth();
   setStatus("WASM 엔진 초기화 중");
   setBadge("초기화");
+  setRuntimeBadge("Booting");
   await init({ module_or_path: WASM_URL });
   state.ready = true;
   createBlankDocument();
@@ -1508,12 +1546,14 @@ async function boot() {
   renderSheet();
   renderSlides();
   await refreshDocumentView();
+  await refreshAgentHealth();
   setMode(state.mode || "writer");
   setStatus(
     "준비 완료",
     "HWP/HWPX 파일을 열거나 오른쪽 에이전트에 업무 문서 요청을 입력하면 됩니다.",
   );
   setBadge("준비 완료");
+  setRuntimeBadge("Command Ready");
 }
 
 elements.tabWriter.addEventListener("click", () => setMode("writer"));

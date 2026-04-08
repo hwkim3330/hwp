@@ -119,12 +119,55 @@
       </main>
 
       <aside class="panel panel-right">
+        <div class="card command-card">
+          <div class="command-head">
+            <div>
+              <p class="eyebrow">Command Center</p>
+              <h2>Agent OS</h2>
+            </div>
+            <span id="agent-runtime" class="badge runtime-badge">대기</span>
+          </div>
+          <div class="cap-grid">
+            <div class="cap-item">
+              <span class="cap-label">LLM</span>
+              <strong id="cap-llm">확인 중</strong>
+              <span id="cap-llm-meta" class="cap-meta">로컬 모델 상태</span>
+            </div>
+            <div class="cap-item">
+              <span class="cap-label">HWPX</span>
+              <strong id="cap-hwpforge">확인 중</strong>
+              <span id="cap-hwpforge-meta" class="cap-meta">변환 / 패치 엔진</span>
+            </div>
+            <div class="cap-item">
+              <span class="cap-label">Vision</span>
+              <strong>실험실</strong>
+              <span class="cap-meta">Electron Vision Lab 연동</span>
+            </div>
+            <div class="cap-item">
+              <span class="cap-label">System</span>
+              <strong>확장 예정</strong>
+              <span class="cap-meta">권한 기반 컴퓨터 유즈</span>
+            </div>
+          </div>
+          <div class="mission-strip">
+            <span class="mission-tag">Documents</span>
+            <span class="mission-tag">Vision</span>
+            <span class="mission-tag">Automation</span>
+            <span class="mission-tag">Local AI</span>
+          </div>
+        </div>
+
         <div class="card chat-card">
-          <h2>에이전트</h2>
+          <div class="command-head">
+            <div>
+              <p class="eyebrow">Operator</p>
+              <h2>에이전트</h2>
+            </div>
+          </div>
           <div id="mode-hint" class="reply planner-meta">현재 대상: Writer</div>
           <textarea
             id="prompt-input"
-            placeholder="예: 인사평가 회의 결과를 공문 초안으로 정리하고 표로 핵심 일정도 넣어줘."
+            placeholder="예: 인사평가 회의 결과를 공문 초안으로 정리하고 표로 핵심 일정도 넣어줘. 장기적으로는 검색, 비전, 시스템 액션까지 여기서 묶습니다."
           ></textarea>
           <div class="button-row">
             <button id="run-agent">작업 실행</button>

@@ -1,4 +1,5 @@
 import init, { HwpDocument } from "https://cdn.jsdelivr.net/npm/@rhwp/core@0.6.1/rhwp.js";
+import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@rhwp/core@0.6.1/rhwp_bg.wasm";
 
@@ -37,19 +38,20 @@ const elements = {
   promptChips: [...document.querySelectorAll(".prompt-chip")],
 };
 
+const SHEET_COLUMNS = ["항목", "담당", "상태", "기한", "우선순위", "비고"];
+
 const state = {
   doc: null,
   fileName: "untitled.hwp",
   ready: false,
   mode: "writer",
   noteText: "",
+  sheetColumns: [...SHEET_COLUMNS],
   sheetRows: [],
   slides: [],
 };
 
 const STORAGE_KEY = "office-agent-staff-state-v1";
-
-const SHEET_COLUMNS = ["항목", "담당", "상태", "기한", "우선순위", "비고"];
 
 function installMeasureTextWidth() {
   let ctx = null;
@@ -378,6 +380,162 @@ function downloadText(text, fileName, mimeType = "text/plain;charset=utf-8") {
   URL.revokeObjectURL(url);
 }
 
+function xmlText(node, selector) {
+  const target = node.querySelector(selector);
+  return target?.textContent?.trim() || "";
+}
+
+function parseXml(xmlTextValue) {
+  return new DOMParser().parseFromString(xmlTextValue, "application/xml");
+}
+
+async function unzipOfficeFile(file) {
+  const bytes = await file.arrayBuffer();
+  return JSZip.loadAsync(bytes);
+}
+
+async function parseDocxFile(file) {
+  const zip = await unzipOfficeFile(file);
+  const documentXml = await zip.file("word/document.xml")?.async("string");
+  if (!documentXml) {
+    throw new Error("DOCX 문서 본문을 찾지 못했습니다.");
+  }
+  const xml = parseXml(documentXml);
+  const paragraphs = [...xml.querySelectorAll("w\\:body > w\\:p, body > p")]
+    .map((paragraph) =>
+      [...paragraph.querySelectorAll("w\\:t, t")]
+        .map((node) => node.textContent || "")
+        .join("")
+        .trim(),
+    )
+    .filter(Boolean);
+
+  if (paragraphs.length === 0) {
+    throw new Error("DOCX에서 읽을 문단이 없습니다.");
+  }
+
+  createBlankDocument();
+  replaceWriterWithText(paragraphs.join("\n\n"));
+  state.fileName = file.name.replace(/\.docx$/i, ".hwp");
+  setMode("writer");
+  persistWorkspace();
+  setStatus("DOCX 문서를 Writer로 가져왔습니다.", `${paragraphs.length}개 문단을 불러왔습니다.`);
+}
+
+async function parseXlsxFile(file) {
+  const zip = await unzipOfficeFile(file);
+  const workbookXml = await zip.file("xl/workbook.xml")?.async("string");
+  if (!workbookXml) {
+    throw new Error("XLSX 워크북을 찾지 못했습니다.");
+  }
+
+  const sharedStringsXml = await zip.file("xl/sharedStrings.xml")?.async("string");
+  const sharedStrings = sharedStringsXml
+    ? [...parseXml(sharedStringsXml).querySelectorAll("si")]
+        .map((item) => [...item.querySelectorAll("t")].map((node) => node.textContent || "").join("").trim())
+    : [];
+
+  const workbook = parseXml(workbookXml);
+  const firstSheet = workbook.querySelector("sheet");
+  const relationshipId = firstSheet?.getAttribute("r:id");
+  if (!relationshipId) {
+    throw new Error("XLSX 첫 시트를 찾지 못했습니다.");
+  }
+
+  const relsXml = await zip.file("xl/_rels/workbook.xml.rels")?.async("string");
+  const rels = relsXml ? parseXml(relsXml) : null;
+  const rel = rels?.querySelector(`Relationship[Id="${relationshipId}"]`);
+  const target = rel?.getAttribute("Target");
+  if (!target) {
+    throw new Error("XLSX 시트 경로를 찾지 못했습니다.");
+  }
+
+  const normalizedTarget = target.startsWith("/")
+    ? target.replace(/^\//, "")
+    : target.startsWith("worksheets/")
+      ? `xl/${target}`
+      : `xl/${target.replace(/^xl\//, "")}`;
+  const sheetXml = await zip.file(normalizedTarget)?.async("string");
+  if (!sheetXml) {
+    throw new Error("XLSX 시트 데이터를 읽지 못했습니다.");
+  }
+
+  const rows = [...parseXml(sheetXml).querySelectorAll("sheetData > row")].map((row) =>
+    [...row.querySelectorAll("c")].map((cell) => {
+      const type = cell.getAttribute("t");
+      const value = xmlText(cell, "v");
+      if (type === "s") {
+        return sharedStrings[Number(value)] || "";
+      }
+      return value;
+    }),
+  );
+
+  const headerRow = rows[0]?.length ? rows[0] : SHEET_COLUMNS;
+  const columns = headerRow.map((value, index) => value || `열${index + 1}`);
+  state.sheetColumns = columns;
+  state.sheetRows = rows.slice(1).map((row) =>
+    columns.reduce((acc, column, index) => {
+      acc[column] = row[index] || "";
+      return acc;
+    }, {}),
+  );
+  if (state.sheetRows.length === 0) {
+    state.sheetRows = Array.from({ length: 8 }, () =>
+      columns.reduce((acc, column) => {
+        acc[column] = "";
+        return acc;
+      }, {}),
+    );
+  }
+  state.fileName = file.name;
+  renderSheet();
+  setMode("sheet");
+  persistWorkspace();
+  setStatus("XLSX 시트를 Sheet로 가져왔습니다.", `${state.sheetColumns.length}개 열, ${state.sheetRows.length}개 행을 불러왔습니다.`);
+}
+
+async function parsePptxFile(file) {
+  const zip = await unzipOfficeFile(file);
+  const slideFiles = Object.keys(zip.files)
+    .filter((name) => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
+    .sort((a, b) => {
+      const aNumber = Number(a.match(/slide(\d+)\.xml/i)?.[1] || 0);
+      const bNumber = Number(b.match(/slide(\d+)\.xml/i)?.[1] || 0);
+      return aNumber - bNumber;
+    });
+
+  if (slideFiles.length === 0) {
+    throw new Error("PPTX 슬라이드를 찾지 못했습니다.");
+  }
+
+  state.slides = [];
+  for (const [index, slidePath] of slideFiles.entries()) {
+    const slideXml = await zip.file(slidePath)?.async("string");
+    if (!slideXml) {
+      continue;
+    }
+    const xml = parseXml(slideXml);
+    const texts = [...xml.querySelectorAll("a\\:t, t")]
+      .map((node) => (node.textContent || "").trim())
+      .filter(Boolean);
+    if (texts.length === 0) {
+      state.slides.push({ title: `슬라이드 ${index + 1}`, bullets: [] });
+      continue;
+    }
+    state.slides.push({
+      title: texts[0] || `슬라이드 ${index + 1}`,
+      bullets: texts.slice(1, 9),
+    });
+  }
+
+  renderSlides();
+  state.fileName = file.name;
+  setMode("slides");
+  persistWorkspace();
+  setStatus("PPTX 슬라이드를 Slides로 가져왔습니다.", `${state.slides.length}개 슬라이드를 불러왔습니다.`);
+}
+
 async function loadDocumentFromFile(file) {
   const name = file.name.toLowerCase();
   const extension = name.includes(".") ? name.split(".").pop() : "";
@@ -432,19 +590,18 @@ async function loadDocumentFromFile(file) {
     return;
   }
 
-  if (["docx", "xlsx", "pptx"].includes(extension)) {
-    const summary = [
-      `[가져온 파일] ${file.name}`,
-      "",
-      `형식: ${extension.toUpperCase()}`,
-      "현재 버전은 이 파일을 완전 편집형으로 파싱하지는 않습니다.",
-      "대신 이 작업공간에서 내용을 새로 작성하거나 요약 메모로 관리할 수 있습니다.",
-    ].join("\n");
-    state.noteText = summary;
-    elements.notesPad.value = summary;
-    state.fileName = file.name;
-    setMode("notes");
-    persistWorkspace();
+  if (extension === "docx") {
+    await parseDocxFile(file);
+    return;
+  }
+
+  if (extension === "xlsx") {
+    await parseXlsxFile(file);
+    return;
+  }
+
+  if (extension === "pptx") {
+    await parsePptxFile(file);
     return;
   }
 
@@ -469,8 +626,9 @@ function downloadBytes(bytes, fileName) {
 }
 
 function resetSheetData() {
+  state.sheetColumns = [...SHEET_COLUMNS];
   state.sheetRows = Array.from({ length: 12 }, (_, rowIndex) =>
-    SHEET_COLUMNS.reduce((acc, column, columnIndex) => {
+    state.sheetColumns.reduce((acc, column, columnIndex) => {
       acc[column] = rowIndex === 0 && columnIndex === 0 ? "예시 업무" : "";
       return acc;
     }, {}),
@@ -486,7 +644,7 @@ function renderSheet() {
   const indexHead = document.createElement("th");
   indexHead.textContent = "#";
   headerRow.append(indexHead);
-  SHEET_COLUMNS.forEach((column) => {
+  state.sheetColumns.forEach((column) => {
     const th = document.createElement("th");
     th.textContent = column;
     headerRow.append(th);
@@ -500,7 +658,7 @@ function renderSheet() {
     const indexCell = document.createElement("th");
     indexCell.textContent = String(rowIndex + 1);
     tr.append(indexCell);
-    SHEET_COLUMNS.forEach((column) => {
+    state.sheetColumns.forEach((column) => {
       const td = document.createElement("td");
       td.contentEditable = "true";
       td.textContent = row[column] || "";
@@ -519,9 +677,9 @@ function renderSheet() {
 
 function exportSheetCsv() {
   const rows = [
-    SHEET_COLUMNS.join(","),
+    state.sheetColumns.join(","),
     ...state.sheetRows.map((row) =>
-      SHEET_COLUMNS.map((column) => `"${String(row[column] || "").replaceAll('"', '""')}"`).join(","),
+      state.sheetColumns.map((column) => `"${String(row[column] || "").replaceAll('"', '""')}"`).join(","),
     ),
   ];
   downloadText(rows.join("\n"), "office-agent-sheet.csv", "text/csv;charset=utf-8");
@@ -567,7 +725,7 @@ function createWorkspaceSnapshot() {
     fileName: state.fileName,
     noteText: elements.notesPad.value,
     sheet: {
-      columns: SHEET_COLUMNS,
+      columns: state.sheetColumns,
       rows: state.sheetRows,
     },
     slides: state.slides,
@@ -592,6 +750,9 @@ function restoreWorkspace() {
       elements.notesPad.value = saved.noteText;
     }
     if (saved.sheet?.rows && Array.isArray(saved.sheet.rows)) {
+      if (Array.isArray(saved.sheet.columns) && saved.sheet.columns.length > 0) {
+        state.sheetColumns = saved.sheet.columns.map((column) => String(column));
+      }
       state.sheetRows = saved.sheet.rows;
     }
     if (Array.isArray(saved.slides)) {
@@ -819,17 +980,21 @@ function applyOperation(operation) {
 
   if (operation.type === "set_sheet_data") {
     if (Array.isArray(operation.rows) && operation.rows.length > 0) {
+      state.sheetColumns = Array.isArray(operation.columns) && operation.columns.length > 0
+        ? operation.columns.map((column) => String(column))
+        : [...SHEET_COLUMNS];
       state.sheetRows = operation.rows.map((row) => {
         const normalized = {};
-        (operation.columns || SHEET_COLUMNS).forEach((column) => {
+        state.sheetColumns.forEach((column) => {
           normalized[column] = row[column] ?? "";
         });
         return normalized;
       });
       renderSheet();
     } else if (Array.isArray(operation.columns) && operation.columns.length > 0) {
+      state.sheetColumns = operation.columns.map((column) => String(column));
       state.sheetRows = Array.from({ length: 8 }, () =>
-        operation.columns.reduce((acc, column) => {
+        state.sheetColumns.reduce((acc, column) => {
           acc[column] = "";
           return acc;
         }, {}),
@@ -876,7 +1041,7 @@ async function runAgent() {
       mode: state.mode,
       noteText: elements.notesPad.value,
       sheet: {
-        columns: SHEET_COLUMNS,
+        columns: state.sheetColumns,
         rows: state.sheetRows,
       },
       slides: state.slides,

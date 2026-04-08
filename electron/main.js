@@ -24,18 +24,18 @@ let previousSample = null;
 function monitorMood(stats) {
   const stress = Math.max(stats.cpu, stats.mem);
   if (stress >= 90) {
-    return { emoji: "🙀", face: "x_x", label: "critical" };
+    return { avatar: "=^x_x^=", face: "x_x", label: "critical" };
   }
   if (stress >= 75) {
-    return { emoji: "😿", face: ">_<", label: "busy" };
+    return { avatar: "=^>_<^=", face: ">_<", label: "busy" };
   }
   if (stress >= 55) {
-    return { emoji: "😼", face: "^_^", label: "active" };
+    return { avatar: "=^^_^=", face: "^_^", label: "active" };
   }
   if (stress >= 30) {
-    return { emoji: "😺", face: "o_o", label: "steady" };
+    return { avatar: "=^o_o^=", face: "o_o", label: "steady" };
   }
-  return { emoji: "😸", face: "-_-", label: "idle" };
+  return { avatar: "=^-_-^=", face: "-_-", label: "idle" };
 }
 
 function createTrayImage() {
@@ -290,7 +290,7 @@ async function updateMonitor() {
   try {
     const stats = await fetchStats();
     const mood = monitorMood(stats);
-    const title = `${mood.emoji} ${stats.cpu}% ${stats.mem}%${stats.batt === null ? "" : ` ${stats.batt}%`}`;
+    const title = `${mood.face} ${stats.cpu}% ${stats.mem}%${stats.batt === null ? "" : ` ${stats.batt}%`}`;
     if (tray) {
       tray.setTitle(title);
       tray.setToolTip(`Office Agent Staff\n${mood.label.toUpperCase()}  CPU ${stats.cpu}%  MEM ${stats.mem}%${stats.batt === null ? "" : `  BAT ${stats.batt}%`}`);

@@ -57,7 +57,11 @@
         border-radius: 30px;
         display: grid;
         place-items: center;
-        font-size: 54px;
+        font-family: "SF Mono", "IBM Plex Mono", monospace;
+        font-size: 17px;
+        line-height: 1.05;
+        white-space: pre;
+        text-align: center;
         background:
           radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.95), rgba(255, 232, 210, 0.68)),
           linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(238, 215, 191, 0.72));
@@ -210,7 +214,9 @@
     <div class="shell">
       <section class="hero">
         <div class="pet-wrap">
-          <div id="pet" class="pet">🙂</div>
+          <div id="pet" class="pet"> /\_/\\
+( o.o )
+ > ^ <</div>
           <div class="pet-shadow"></div>
         </div>
         <div class="speech">
@@ -336,9 +342,9 @@
       }
 
       window.desktopMonitor.onStats((stats) => {
-        const petMood = stats.mood || { emoji: "🙂", label: "steady", face: "o_o" };
+        const petMood = stats.mood || { avatar: "=^o_o^=", label: "steady", face: "o_o" };
         const [headline, subline] = messageForMood(petMood.label, stats);
-        pet.textContent = petMood.emoji;
+        pet.textContent = petMood.avatar || "=^o_o^=";
         mood.textContent = `${petMood.label} · ${petMood.face}`;
         speechLine.textContent = headline;
         speechSub.textContent = subline;

@@ -66,11 +66,53 @@
         <div class="workspace-head">
           <div>
             <p class="eyebrow">Preview</p>
-            <h2>문서 미리보기</h2>
+            <h2>오피스 워크스테이션</h2>
           </div>
           <span id="render-badge" class="badge">대기</span>
         </div>
-        <div id="pages" class="pages"></div>
+        <div class="mode-tabs">
+          <button id="tab-writer" class="mode-tab active">Writer</button>
+          <button id="tab-notes" class="mode-tab">Notes</button>
+          <button id="tab-sheet" class="mode-tab">Sheet</button>
+          <button id="tab-slides" class="mode-tab">Slides</button>
+        </div>
+
+        <section id="workspace-writer" class="workspace-panel active">
+          <div id="pages" class="pages"></div>
+        </section>
+
+        <section id="workspace-notes" class="workspace-panel">
+          <div class="tool-head">
+            <h3>메모장</h3>
+            <div class="button-row">
+              <button id="new-note" class="secondary">새 메모</button>
+              <button id="export-note">TXT 저장</button>
+            </div>
+          </div>
+          <textarea id="notes-pad" class="tool-textarea" placeholder="빠른 메모, 회의 초안, 체크리스트를 적어두는 공간입니다."></textarea>
+        </section>
+
+        <section id="workspace-sheet" class="workspace-panel">
+          <div class="tool-head">
+            <h3>시트</h3>
+            <div class="button-row">
+              <button id="reset-sheet" class="secondary">시트 초기화</button>
+              <button id="export-sheet">CSV 저장</button>
+            </div>
+          </div>
+          <div id="sheet-grid" class="sheet-grid"></div>
+        </section>
+
+        <section id="workspace-slides" class="workspace-panel">
+          <div class="tool-head">
+            <h3>슬라이드 초안</h3>
+            <div class="button-row">
+              <button id="generate-slides" class="secondary">현재 요청으로 생성</button>
+              <button id="export-slides">MD 저장</button>
+            </div>
+          </div>
+          <div id="slides-deck" class="slides-deck"></div>
+        </section>
       </main>
 
       <aside class="panel panel-right">

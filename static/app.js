@@ -3,9 +3,26 @@ import init, { HwpDocument } from "https://cdn.jsdelivr.net/npm/@rhwp/core@0.6.1
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@rhwp/core@0.6.1/rhwp_bg.wasm";
 
 const elements = {
+  tabWriter: document.querySelector("#tab-writer"),
+  tabNotes: document.querySelector("#tab-notes"),
+  tabSheet: document.querySelector("#tab-sheet"),
+  tabSlides: document.querySelector("#tab-slides"),
+  workspaceWriter: document.querySelector("#workspace-writer"),
+  workspaceNotes: document.querySelector("#workspace-notes"),
+  workspaceSheet: document.querySelector("#workspace-sheet"),
+  workspaceSlides: document.querySelector("#workspace-slides"),
   newDocument: document.querySelector("#new-document"),
   exportDocument: document.querySelector("#export-document"),
   fileInput: document.querySelector("#file-input"),
+  newNote: document.querySelector("#new-note"),
+  exportNote: document.querySelector("#export-note"),
+  notesPad: document.querySelector("#notes-pad"),
+  resetSheet: document.querySelector("#reset-sheet"),
+  exportSheet: document.querySelector("#export-sheet"),
+  sheetGrid: document.querySelector("#sheet-grid"),
+  generateSlides: document.querySelector("#generate-slides"),
+  exportSlides: document.querySelector("#export-slides"),
+  slidesDeck: document.querySelector("#slides-deck"),
   docMeta: document.querySelector("#doc-meta"),
   outlineBox: document.querySelector("#outline-box"),
   statusBox: document.querySelector("#status-box"),
@@ -23,7 +40,13 @@ const state = {
   doc: null,
   fileName: "untitled.hwp",
   ready: false,
+  mode: "writer",
+  noteText: "",
+  sheetRows: [],
+  slides: [],
 };
+
+const SHEET_COLUMNS = ["항목", "담당", "상태", "기한", "우선순위", "비고"];
 
 function installMeasureTextWidth() {
   let ctx = null;
@@ -46,6 +69,25 @@ function setStatus(message, extra = "") {
 
 function setBadge(message) {
   elements.renderBadge.textContent = message;
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  const map = {
+    writer: [elements.tabWriter, elements.workspaceWriter],
+    notes: [elements.tabNotes, elements.workspaceNotes],
+    sheet: [elements.tabSheet, elements.workspaceSheet],
+    slides: [elements.tabSlides, elements.workspaceSlides],
+  };
+
+  [elements.tabWriter, elements.tabNotes, elements.tabSheet, elements.tabSlides].forEach((tab) =>
+    tab.classList.remove("active"),
+  );
+  [elements.workspaceWriter, elements.workspaceNotes, elements.workspaceSheet, elements.workspaceSlides].forEach((panel) =>
+    panel.classList.remove("active"),
+  );
+  map[mode][0].classList.add("active");
+  map[mode][1].classList.add("active");
 }
 
 function parseJson(value) {
@@ -73,6 +115,16 @@ function createBlankDocument() {
   state.fileName = "untitled.hwp";
 }
 
+function downloadText(text, fileName, mimeType = "text/plain;charset=utf-8") {
+  const blob = new Blob([text], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 async function loadDocumentFromFile(file) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (state.doc) {
@@ -90,6 +142,103 @@ function downloadBytes(bytes, fileName) {
   link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function resetSheetData() {
+  state.sheetRows = Array.from({ length: 12 }, (_, rowIndex) =>
+    SHEET_COLUMNS.reduce((acc, column, columnIndex) => {
+      acc[column] = rowIndex === 0 && columnIndex === 0 ? "예시 업무" : "";
+      return acc;
+    }, {}),
+  );
+}
+
+function renderSheet() {
+  const table = document.createElement("table");
+  table.className = "sheet-table";
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  const indexHead = document.createElement("th");
+  indexHead.textContent = "#";
+  headerRow.append(indexHead);
+  SHEET_COLUMNS.forEach((column) => {
+    const th = document.createElement("th");
+    th.textContent = column;
+    headerRow.append(th);
+  });
+  thead.append(headerRow);
+  table.append(thead);
+
+  const tbody = document.createElement("tbody");
+  state.sheetRows.forEach((row, rowIndex) => {
+    const tr = document.createElement("tr");
+    const indexCell = document.createElement("th");
+    indexCell.textContent = String(rowIndex + 1);
+    tr.append(indexCell);
+    SHEET_COLUMNS.forEach((column) => {
+      const td = document.createElement("td");
+      td.contentEditable = "true";
+      td.textContent = row[column] || "";
+      td.addEventListener("input", () => {
+        state.sheetRows[rowIndex][column] = td.textContent ?? "";
+      });
+      tr.append(td);
+    });
+    tbody.append(tr);
+  });
+  table.append(tbody);
+  elements.sheetGrid.innerHTML = "";
+  elements.sheetGrid.append(table);
+}
+
+function exportSheetCsv() {
+  const rows = [
+    SHEET_COLUMNS.join(","),
+    ...state.sheetRows.map((row) =>
+      SHEET_COLUMNS.map((column) => `"${String(row[column] || "").replaceAll('"', '""')}"`).join(","),
+    ),
+  ];
+  downloadText(rows.join("\n"), "office-agent-sheet.csv", "text/csv;charset=utf-8");
+}
+
+function generateSlidesFromPrompt(prompt) {
+  const base = prompt.trim() || "오피스 에이전트 소개";
+  state.slides = [
+    { title: "제목", bullets: [base, "발표 목적과 배경", "핵심 한 줄 메시지"] },
+    { title: "현황", bullets: ["현재 문제점 정리", "업무 흐름 요약", "주요 리스크"] },
+    { title: "제안", bullets: ["개선 방안", "실행 방법", "기대 효과"] },
+    { title: "실행 계획", bullets: ["단계별 일정", "담당 역할", "필요 자원"] },
+    { title: "마무리", bullets: ["결정 필요 사항", "다음 액션", "질의응답"] },
+  ];
+  renderSlides();
+}
+
+function renderSlides() {
+  elements.slidesDeck.innerHTML = "";
+  if (state.slides.length === 0) {
+    elements.slidesDeck.innerHTML = "<div class='slide-card'><h4>슬라이드 없음</h4><p>오른쪽 요청 입력 후 생성 버튼을 누르면 발표 초안이 만들어집니다.</p></div>";
+    return;
+  }
+  state.slides.forEach((slide, index) => {
+    const card = document.createElement("article");
+    card.className = "slide-card";
+    const title = document.createElement("h4");
+    title.textContent = `${index + 1}. ${slide.title}`;
+    card.append(title);
+    slide.bullets.forEach((bullet) => {
+      const p = document.createElement("p");
+      p.textContent = `• ${bullet}`;
+      card.append(p);
+    });
+    elements.slidesDeck.append(card);
+  });
+}
+
+function exportSlidesMarkdown() {
+  const markdown = state.slides
+    .map((slide) => `## ${slide.title}\n${slide.bullets.map((bullet) => `- ${bullet}`).join("\n")}`)
+    .join("\n\n");
+  downloadText(markdown || "## 슬라이드 초안 없음\n", "office-agent-slides.md", "text/markdown;charset=utf-8");
 }
 
 function getDocumentSummary() {
@@ -304,6 +453,9 @@ async function runAgent() {
     }
 
     await refreshDocumentView();
+    if (state.mode === "slides" && state.slides.length === 0) {
+      generateSlidesFromPrompt(prompt);
+    }
     elements.reply.innerHTML = `<p>${escapeHtml(plan.reply || "작업을 적용했습니다.")}</p>`;
     setBadge("적용 완료");
     setStatus(
@@ -326,6 +478,9 @@ async function boot() {
   await init({ module_or_path: WASM_URL });
   state.ready = true;
   createBlankDocument();
+  resetSheetData();
+  renderSheet();
+  renderSlides();
   await refreshDocumentView();
   setStatus(
     "준비 완료",
@@ -334,11 +489,55 @@ async function boot() {
   setBadge("준비 완료");
 }
 
+elements.tabWriter.addEventListener("click", () => setMode("writer"));
+elements.tabNotes.addEventListener("click", () => setMode("notes"));
+elements.tabSheet.addEventListener("click", () => setMode("sheet"));
+elements.tabSlides.addEventListener("click", () => setMode("slides"));
+
 elements.newDocument.addEventListener("click", async () => {
   createBlankDocument();
   await refreshDocumentView();
   setStatus("빈 문서를 새로 만들었습니다.");
   setBadge("새 문서");
+});
+
+elements.newNote.addEventListener("click", () => {
+  state.noteText = "";
+  elements.notesPad.value = "";
+  setMode("notes");
+  setStatus("새 메모를 시작했습니다.");
+});
+
+elements.notesPad.addEventListener("input", () => {
+  state.noteText = elements.notesPad.value;
+});
+
+elements.exportNote.addEventListener("click", () => {
+  downloadText(elements.notesPad.value || "", "office-agent-note.txt");
+  setStatus("메모를 TXT로 저장했습니다.");
+});
+
+elements.resetSheet.addEventListener("click", () => {
+  resetSheetData();
+  renderSheet();
+  setMode("sheet");
+  setStatus("시트를 초기화했습니다.");
+});
+
+elements.exportSheet.addEventListener("click", () => {
+  exportSheetCsv();
+  setStatus("시트를 CSV로 저장했습니다.");
+});
+
+elements.generateSlides.addEventListener("click", () => {
+  generateSlidesFromPrompt(elements.promptInput.value);
+  setMode("slides");
+  setStatus("현재 요청을 기준으로 슬라이드 초안을 생성했습니다.");
+});
+
+elements.exportSlides.addEventListener("click", () => {
+  exportSlidesMarkdown();
+  setStatus("슬라이드 초안을 Markdown으로 저장했습니다.");
 });
 
 elements.exportDocument.addEventListener("click", () => {

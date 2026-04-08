@@ -25,7 +25,7 @@ python3 app.py
 
 ```bash
 export LLM_BASE_URL="http://127.0.0.1:11434/v1"
-export LLM_MODEL="gemma3:27b"
+export LLM_MODEL="gemma4:latest"
 export LLM_API_KEY=""
 ```
 

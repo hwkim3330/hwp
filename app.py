@@ -14,7 +14,7 @@ STATIC_DIR = ROOT / "static"
 HOST = os.environ.get("OFFICE_AGENT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("OFFICE_AGENT_PORT", "8765"))
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:11434/v1").rstrip("/")
-LLM_MODEL = os.environ.get("LLM_MODEL", "gemma3:27b")
+LLM_MODEL = os.environ.get("LLM_MODEL", "gemma4:latest")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 
 

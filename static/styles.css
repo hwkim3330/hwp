@@ -64,6 +64,31 @@ input {
   overflow: auto;
 }
 
+.mode-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.mode-tab {
+  background: #eadcc4;
+  color: var(--ink);
+}
+
+.mode-tab.active {
+  background: var(--accent);
+  color: white;
+}
+
+.workspace-panel {
+  display: none;
+}
+
+.workspace-panel.active {
+  display: block;
+}
+
 .card {
   padding: 16px;
 }
@@ -220,6 +245,18 @@ button.secondary {
   display: block;
 }
 
+.tool-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.tool-head h3 {
+  margin: 0;
+}
+
 .chat-card {
   gap: 12px;
 }
@@ -236,6 +273,11 @@ textarea {
   line-height: 1.6;
 }
 
+.tool-textarea {
+  min-height: 60vh;
+  background: #fffdfa;
+}
+
 .reply {
   min-height: 100px;
   line-height: 1.6;
@@ -245,6 +287,59 @@ textarea {
   min-height: auto;
   margin-top: 10px;
   font-size: 13px;
+  color: var(--muted);
+}
+
+.sheet-grid {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: white;
+}
+
+.sheet-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.sheet-table th,
+.sheet-table td {
+  border: 1px solid #e5dccd;
+  padding: 10px;
+  min-width: 110px;
+  vertical-align: top;
+}
+
+.sheet-table th {
+  background: #f5efe4;
+  text-align: left;
+}
+
+.sheet-table td[contenteditable="true"] {
+  background: #fffdfa;
+}
+
+.slides-deck {
+  display: grid;
+  gap: 14px;
+}
+
+.slide-card {
+  background: linear-gradient(135deg, #fffefb, #f4eadb);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: 0 10px 24px rgba(59, 42, 18, 0.08);
+}
+
+.slide-card h4 {
+  margin: 0 0 10px;
+  font-size: 20px;
+}
+
+.slide-card p {
+  margin: 8px 0 0;
   color: var(--muted);
 }
 

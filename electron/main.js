@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell } = require("electron");
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, ipcMain } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");
 const http = require("http");
@@ -10,6 +10,7 @@ const SERVER_ENTRY = path.resolve(__dirname, "..", "app.py");
 
 let mainWindow = null;
 let monitorWindow = null;
+let visionWindow = null;
 let tray = null;
 let serverProcess = null;
 let monitorTimer = null;
@@ -116,8 +117,8 @@ function createMainWindow() {
 
 function createMonitorWindow() {
   monitorWindow = new BrowserWindow({
-    width: 320,
-    height: 220,
+    width: 380,
+    height: 560,
     show: false,
     frame: false,
     resizable: false,
@@ -140,6 +141,27 @@ function createMonitorWindow() {
     if (monitorWindow && monitorWindow.isVisible()) {
       monitorWindow.hide();
     }
+  });
+}
+
+function createVisionWindow() {
+  visionWindow = new BrowserWindow({
+    width: 980,
+    height: 760,
+    show: false,
+    title: "Vision Lab",
+    backgroundColor: "#f5ecdf",
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+
+  visionWindow.loadFile(path.join(__dirname, "vision.html"));
+  visionWindow.on("closed", () => {
+    visionWindow = null;
   });
 }
 
@@ -246,12 +268,21 @@ function toggleMonitorWindow() {
   monitorWindow.focus();
 }
 
+function openVisionWindow() {
+  if (!visionWindow || visionWindow.isDestroyed()) {
+    createVisionWindow();
+  }
+  visionWindow.show();
+  visionWindow.focus();
+}
+
 function createTray() {
   tray = new Tray(createTrayImage());
   tray.setTitle("SYS --");
   const contextMenu = Menu.buildFromTemplate([
     { label: "Open Office Agent", click: () => mainWindow?.show() },
     { label: "Toggle System Monitor", click: () => toggleMonitorWindow() },
+    { label: "Open Vision Lab", click: () => openVisionWindow() },
     { type: "separator" },
     { label: "Open in Browser", click: () => shell.openExternal(APP_URL) },
     { type: "separator" },
@@ -266,10 +297,29 @@ async function bootstrap() {
   await loadHardwareInfo();
   createMainWindow();
   createMonitorWindow();
+  createVisionWindow();
   createTray();
   await updateMonitor();
   monitorTimer = setInterval(updateMonitor, 2000);
 }
+
+const VISION_RESOURCES = {
+  headPointerGuide: "https://support.apple.com/en-mz/guide/mac-help/mchlb2d4782b/mac",
+  displaysGuide: "https://support.apple.com/en-is/guide/mac-help/mchlb5f905a1/mac",
+  externalCameraGuide: "https://support.apple.com/en-al/guide/mac-help/mchl034033f4/mac",
+  mbp2021Specs: "https://support.apple.com/en-us/111901",
+  mbp2024Specs: "https://support.apple.com/en-us/121554",
+  lidAngleSensor: "https://github.com/samhenrigold/LidAngleSensor",
+};
+
+ipcMain.handle("vision:open-resource", async (_event, resource) => {
+  const url = VISION_RESOURCES[resource];
+  if (!url) {
+    throw new Error(`unknown vision resource: ${resource}`);
+  }
+  await shell.openExternal(url);
+  return { ok: true };
+});
 
 app.whenReady().then(async () => {
   await bootstrap();

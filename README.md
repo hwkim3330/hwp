@@ -43,6 +43,7 @@ npm run desktop
 - 독립 macOS 앱 창으로 Office Agent Staff 실행
 - 메뉴바에서 CPU / MEM / BAT 사용률 표시
 - 클릭 시 작은 시스템 모니터 팝오버 표시
+- `Vision Lab` 창에서 Head Pointer / 외장 카메라 / lid angle 실험 구조 확인
 - GPU 모델 표시
 - NPU/ANE 사용량은 현재 Electron 빌드에서 측정 불가
 

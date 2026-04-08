@@ -4,4 +4,7 @@ contextBridge.exposeInMainWorld("desktopMonitor", {
   onStats(callback) {
     ipcRenderer.on("system-stats", (_event, payload) => callback(payload));
   },
+  openVisionResource(resource) {
+    return ipcRenderer.invoke("vision:open-resource", resource);
+  },
 });

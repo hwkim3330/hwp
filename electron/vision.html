@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vision Lab</title>
+    <style>
+      :root {
+        --bg: #f4eadb;
+        --card: rgba(255, 255, 255, 0.78);
+        --line: rgba(69, 50, 31, 0.12);
+        --ink: #1f1a17;
+        --muted: #665d53;
+        --accent: #bb6339;
+        --good: #436f4c;
+        --warn: #8d6c2d;
+        --bad: #983f38;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: "SF Pro Display", "Apple SD Gothic Neo", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(255,255,255,0.72), transparent 36%),
+          linear-gradient(180deg, #fdf5eb, var(--bg));
+      }
+
+      .shell {
+        max-width: 1160px;
+        margin: 0 auto;
+        padding: 28px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 18px;
+        align-items: center;
+        margin-bottom: 18px;
+      }
+
+      .avatar {
+        width: 140px;
+        height: 140px;
+        border-radius: 38px;
+        display: grid;
+        place-items: center;
+        font-size: 72px;
+        background:
+          radial-gradient(circle at 35% 28%, rgba(255,255,255,0.96), rgba(255,232,210,0.74)),
+          linear-gradient(180deg, rgba(255,255,255,0.82), rgba(234,212,191,0.8));
+        border: 1px solid var(--line);
+        box-shadow: 0 18px 40px rgba(91, 65, 40, 0.14);
+      }
+
+      .eyebrow {
+        margin: 0 0 6px;
+        color: var(--accent);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 12px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 38px;
+        line-height: 1.02;
+      }
+
+      .lede {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.5;
+        max-width: 760px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .card {
+        grid-column: span 4;
+        padding: 16px;
+        border-radius: 22px;
+        border: 1px solid var(--line);
+        background: var(--card);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 14px 26px rgba(89, 66, 42, 0.08);
+      }
+
+      .card.wide {
+        grid-column: span 6;
+      }
+
+      .card.full {
+        grid-column: 1 / -1;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+      }
+
+      .tag.good { background: rgba(67,111,76,0.12); color: var(--good); }
+      .tag.warn { background: rgba(141,108,45,0.12); color: var(--warn); }
+      .tag.bad { background: rgba(152,63,56,0.12); color: var(--bad); }
+
+      h2 {
+        margin: 14px 0 0;
+        font-size: 22px;
+      }
+
+      p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .flat-list {
+        margin: 12px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+
+      .flat-list li {
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(255,255,255,0.58);
+        color: #2d251f;
+      }
+
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 12px;
+        padding: 10px 14px;
+        font: inherit;
+        font-weight: 700;
+        color: white;
+        background: linear-gradient(180deg, #cc7241, #b04c33);
+        cursor: pointer;
+      }
+
+      button.secondary {
+        color: var(--ink);
+        background: rgba(255,255,255,0.88);
+        border: 1px solid var(--line);
+      }
+
+      .arch {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .arch-item {
+        padding: 14px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255,255,255,0.56);
+      }
+
+      .arch-item strong {
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      @media (max-width: 860px) {
+        .hero {
+          grid-template-columns: 1fr;
+        }
+
+        .card,
+        .card.wide {
+          grid-column: 1 / -1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <section class="hero">
+        <div class="avatar">🧠</div>
+        <div>
+          <p class="eyebrow">Tony Stark Mode</p>
+          <h1>Vision Lab</h1>
+          <p class="lede">
+            맥북프로 16인치에서 가능한 비전 제어 실험을 현실 기준으로 정리한 패널입니다.
+            일반 웹캠 기반 Head Pointer는 가능하고, Face ID용 적외선/TrueDepth 카메라 활용이나 독립 이중 포인터 분리는 공개 macOS 기준으로 어렵습니다.
+          </p>
+        </div>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <span class="tag good">가능</span>
+          <h2>웹캠 기반 얼굴 / 머리 추적</h2>
+          <p>macOS 접근성 Head Pointer와 얼굴 표정 기반 Alternate pointer actions 조합은 현실적으로 쓸 수 있습니다.</p>
+          <ul class="flat-list">
+            <li>단일 시스템 포인터를 얼굴 / 머리로 제어</li>
+            <li>표정으로 클릭, 더블클릭, 드래그 트리거</li>
+            <li>카메라 선택 가능</li>
+          </ul>
+          <div class="button-row">
+            <button data-resource="headPointerGuide">Head Pointer 가이드</button>
+            <button class="secondary" data-resource="externalCameraGuide">외장 카메라 가이드</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <span class="tag bad">어려움</span>
+          <h2>Face ID / IR / TrueDepth 활용</h2>
+          <p>맥북프로 16인치 공개 사양 기준으로 Face ID, TrueDepth, 적외선 카메라 하드웨어가 노출되지 않습니다.</p>
+          <ul class="flat-list">
+            <li>생체 인증은 Touch ID 중심</li>
+            <li>공개 하드웨어 문서에 Face ID 없음</li>
+            <li>IR 기반 독자 제어 시스템 전제는 부적합</li>
+          </ul>
+          <div class="button-row">
+            <button data-resource="mbp2021Specs">2021-2023 사양</button>
+            <button class="secondary" data-resource="mbp2024Specs">2024 사양</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <span class="tag warn">제한</span>
+          <h2>독립 이중 포인터</h2>
+          <p>외장 모니터와 맥북 내장 화면을 서로 다른 입력 시스템으로 완전히 분리하는 건 공개 macOS 기능만으로는 어렵습니다.</p>
+          <ul class="flat-list">
+            <li>Head Pointer는 시스템 포인터 하나를 움직임</li>
+            <li>마우스/트랙패드 입력 시 Head Pointer는 일시정지 후 재개</li>
+            <li>결론적으로 “번갈아 제어”는 가능하지만 “완전 분리”는 어려움</li>
+          </ul>
+          <div class="button-row">
+            <button data-resource="displaysGuide">디스플레이 가이드</button>
+          </div>
+        </article>
+
+        <article class="card wide">
+          <span class="tag good">현실적인 아키텍처</span>
+          <h2>3가지 운영안</h2>
+          <div class="arch">
+            <div class="arch-item">
+              <strong>1안. 순정 macOS 접근성만 사용</strong>
+              외장 모니터 포함 단일 포인터를 Head Pointer로 움직이고, 표정 클릭을 붙입니다. 구현 난도가 가장 낮습니다.
+            </div>
+            <div class="arch-item">
+              <strong>2안. 외장 모니터 위 웹캠 추가</strong>
+              외장 모니터를 볼 때도 시선축이 맞도록 외장 카메라를 Head Pointer용으로 지정합니다. 실제 사용성은 이 구성이 가장 낫습니다.
+            </div>
+            <div class="arch-item">
+              <strong>3안. Lid Angle Sensor 실험 포함</strong>
+              맥북 화면 각도에 따라 감도 전환, 모드 전환, 앱 실행을 붙입니다. 다만 비공식 센서 접근이라 업데이트 리스크가 있습니다.
+            </div>
+          </div>
+        </article>
+
+        <article class="card wide">
+          <span class="tag warn">비공식 센서</span>
+          <h2>Lid Angle Sensor</h2>
+          <p>화면 기울기 기반 제어는 가능성이 있지만 공식 API가 아니라 실험 레벨로 다뤄야 합니다.</p>
+          <ul class="flat-list">
+            <li>IOHIDManager 기반 숨겨진 lid angle 센서 접근</li>
+            <li>macOS 업데이트 / 모델별 차이로 깨질 수 있음</li>
+            <li>프로토타입과 개인 프로젝트엔 적합</li>
+          </ul>
+          <div class="button-row">
+            <button data-resource="lidAngleSensor">LidAngleSensor GitHub</button>
+          </div>
+        </article>
+
+        <article class="card full">
+          <span class="tag good">제품 통합 방향</span>
+          <h2>Office Agent와 합치는 방식</h2>
+          <ul class="flat-list">
+            <li>메뉴바 펫 모니터는 시스템 상태 표시 담당</li>
+            <li>Vision Lab은 가능한 제어 방식과 가이드를 정리하는 실험실 역할</li>
+            <li>실제 포인터 제어는 macOS 접근성으로 넘기고 앱은 상태/설정 허브 역할 수행</li>
+            <li>장기적으로는 lid angle, 외장 카메라, 앱 자동 전환 시나리오를 이 창에서 실험</li>
+          </ul>
+        </article>
+      </section>
+    </div>
+
+    <script>
+      document.querySelectorAll("[data-resource]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          try {
+            await window.desktopMonitor.openVisionResource(button.dataset.resource);
+          } catch (error) {
+            console.error(error);
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

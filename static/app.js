@@ -110,6 +110,59 @@ function escapeHtml(text) {
     .replaceAll(">", "&gt;");
 }
 
+function textToSafeHtml(text) {
+  return String(text || "")
+    .split(/\n{2,}/)
+    .map((chunk) => `<p>${escapeHtml(chunk).replaceAll("\n", "<br>")}</p>`)
+    .join("");
+}
+
+function normalizeHtmlForRhwp(html) {
+  const parser = new DOMParser();
+  const source = String(html || "").replace(/<!--[\s\S]*?-->/g, "");
+  const doc = parser.parseFromString(`<div>${source}</div>`, "text/html");
+  const allowed = new Set(["H1", "H2", "H3", "P", "UL", "OL", "LI", "STRONG", "EM", "BR", "TABLE", "THEAD", "TBODY", "TR", "TH", "TD"]);
+
+  function sanitizeNode(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return doc.createTextNode(node.textContent || "");
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return doc.createTextNode("");
+    }
+
+    const tag = node.tagName.toUpperCase();
+    if (!allowed.has(tag)) {
+      const fragment = doc.createDocumentFragment();
+      [...node.childNodes].forEach((child) => fragment.appendChild(sanitizeNode(child)));
+      return fragment;
+    }
+
+    const clean = doc.createElement(tag.toLowerCase());
+    [...node.childNodes].forEach((child) => clean.appendChild(sanitizeNode(child)));
+    return clean;
+  }
+
+  const container = doc.createElement("div");
+  [...doc.body.firstChild.childNodes].forEach((child) => container.appendChild(sanitizeNode(child)));
+  const normalized = container.innerHTML.trim();
+  return normalized || "<p>내용 없음</p>";
+}
+
+function applyWriterHtml(section, paragraph, offset, html) {
+  const safeHtml = normalizeHtmlForRhwp(html);
+  try {
+    state.doc.pasteHtml(section, paragraph, offset, safeHtml);
+    return;
+  } catch (error) {
+    console.warn("pasteHtml failed, falling back to plain text", error);
+  }
+
+  const plainText = new DOMParser().parseFromString(`<div>${safeHtml}</div>`, "text/html").body.textContent || "";
+  const fallbackHtml = textToSafeHtml(plainText);
+  state.doc.pasteHtml(section, paragraph, offset, fallbackHtml);
+}
+
 function createBlankDocument() {
   if (state.doc) {
     state.doc.free();
@@ -418,7 +471,8 @@ function applyOperation(operation) {
 
   if (operation.type === "set_document_html") {
     createBlankDocument();
-    state.doc.pasteHtml(0, 0, 0, operation.html);
+    applyWriterHtml(0, 0, 0, operation.html);
+    persistWorkspace();
     return;
   }
 
@@ -426,7 +480,8 @@ function applyOperation(operation) {
     const summary = getDocumentSummary();
     const last = summary.paragraphs.at(-1) ?? { section: 0, paragraph: 0 };
     const offset = getParagraphLength(last.section, last.paragraph);
-    state.doc.pasteHtml(last.section, last.paragraph, offset, operation.html);
+    applyWriterHtml(last.section, last.paragraph, offset, operation.html);
+    persistWorkspace();
     return;
   }
 
@@ -452,7 +507,7 @@ function applyOperation(operation) {
     if (length > 0) {
       state.doc.deleteText(operation.section, operation.paragraph, 0, length);
     }
-    state.doc.pasteHtml(operation.section, operation.paragraph, 0, operation.html);
+    applyWriterHtml(operation.section, operation.paragraph, 0, operation.html);
     persistWorkspace();
     return;
   }
@@ -473,6 +528,14 @@ function applyOperation(operation) {
         });
         return normalized;
       });
+      renderSheet();
+    } else if (Array.isArray(operation.columns) && operation.columns.length > 0) {
+      state.sheetRows = Array.from({ length: 8 }, () =>
+        operation.columns.reduce((acc, column) => {
+          acc[column] = "";
+          return acc;
+        }, {}),
+      );
       renderSheet();
     }
     persistWorkspace();

@@ -16,6 +16,8 @@ PORT = int(os.environ.get("OFFICE_AGENT_PORT", "8765"))
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:11434/v1").rstrip("/")
 LLM_MODEL = os.environ.get("LLM_MODEL", "gemma4:latest")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
+LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "20"))
+LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "900"))
 
 
 SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
@@ -502,7 +504,8 @@ def call_llm(user_prompt, document):
                 ),
             },
         ],
-        "temperature": 0.3,
+        "temperature": 0.2,
+        "max_tokens": LLM_MAX_TOKENS,
     }
 
     headers = {"Content-Type": "application/json"}
@@ -515,7 +518,7 @@ def call_llm(user_prompt, document):
         headers=headers,
         method="POST",
     )
-    with request.urlopen(req, timeout=90) as response:
+    with request.urlopen(req, timeout=LLM_TIMEOUT_SECONDS) as response:
         raw = response.read().decode("utf-8")
     data = json.loads(raw)
     content = data["choices"][0]["message"]["content"]
@@ -585,6 +588,7 @@ def main():
     print(f"Office Agent Staff listening on http://{HOST}:{PORT}")
     print(f"LLM endpoint: {LLM_BASE_URL}/chat/completions")
     print(f"Model: {LLM_MODEL}")
+    print(f"LLM timeout: {LLM_TIMEOUT_SECONDS}s")
     server.serve_forever()
 
 

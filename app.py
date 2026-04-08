@@ -180,6 +180,10 @@ def extract_json_object(text):
     return match.group(0)
 
 
+def is_ollama_base_url():
+    return "127.0.0.1:11434" in LLM_BASE_URL or "localhost:11434" in LLM_BASE_URL
+
+
 def validate_plan(plan):
     if not isinstance(plan, dict):
         raise ValueError("plan must be an object")
@@ -692,29 +696,32 @@ def fallback_plan(user_prompt, document, workspace, reason):
 
 
 def call_llm(user_prompt, document):
+    user_content = json.dumps(
+        {
+            "user_request": user_prompt,
+            "document": compact_document(document),
+            "mode": document.get("mode", "writer"),
+            "workspace": {
+                "noteText": str(document.get("noteText", ""))[:3000],
+                "sheet": compact_sheet(document.get("sheet", {})),
+                "slides": compact_slides(document.get("slides", [])),
+            },
+        },
+        ensure_ascii=False,
+    )
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+    if is_ollama_base_url():
+        return call_ollama_llm(messages)
+
     payload = {
         "model": LLM_MODEL,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "user_request": user_prompt,
-                        "document": compact_document(document),
-                        "mode": document.get("mode", "writer"),
-                        "workspace": {
-                            "noteText": str(document.get("noteText", ""))[:3000],
-                            "sheet": compact_sheet(document.get("sheet", {})),
-                            "slides": compact_slides(document.get("slides", [])),
-                        },
-                    },
-                    ensure_ascii=False,
-                ),
-            },
-        ],
+        "messages": messages,
         "temperature": 0.2,
         "max_tokens": LLM_MAX_TOKENS,
+        "response_format": {"type": "json_object"},
     }
 
     headers = {"Content-Type": "application/json"}
@@ -731,6 +738,30 @@ def call_llm(user_prompt, document):
         raw = response.read().decode("utf-8")
     data = json.loads(raw)
     content = data["choices"][0]["message"]["content"]
+    return validate_plan(json.loads(extract_json_object(content)))
+
+
+def call_ollama_llm(messages):
+    payload = {
+        "model": LLM_MODEL,
+        "messages": messages,
+        "stream": False,
+        "format": "json",
+        "options": {
+            "temperature": 0.1,
+            "num_predict": LLM_MAX_TOKENS,
+        },
+    }
+    req = request.Request(
+        "http://127.0.0.1:11434/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with request.urlopen(req, timeout=LLM_TIMEOUT_SECONDS) as response:
+        raw = response.read().decode("utf-8")
+    data = json.loads(raw)
+    content = data["message"]["content"]
     return validate_plan(json.loads(extract_json_object(content)))
 
 

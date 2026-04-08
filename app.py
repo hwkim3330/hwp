@@ -22,6 +22,10 @@ LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "20"))
 LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "900"))
 HWPFORGE_CMD = os.environ.get("HWPFORGE_CMD", "hwpforge")
+ENABLE_WEB_SEARCH = os.environ.get("ENABLE_WEB_SEARCH", "0") == "1"
+ENABLE_VISION_EXPERIMENTS = os.environ.get("ENABLE_VISION_EXPERIMENTS", "1") != "0"
+ENABLE_SYSTEM_ACTIONS = os.environ.get("ENABLE_SYSTEM_ACTIONS", "0") == "1"
+ENABLE_FILE_AUTOMATION = os.environ.get("ENABLE_FILE_AUTOMATION", "1") != "0"
 
 
 SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
@@ -804,6 +808,97 @@ def hwpforge_status():
     }
 
 
+def permission_registry():
+    return [
+        {
+            "id": "documents.write",
+            "label": "Document Write",
+            "status": "granted",
+            "detail": "Writer / Notes / Sheet / Slides 편집 허용",
+        },
+        {
+            "id": "files.automation",
+            "label": "File Automation",
+            "status": "granted" if ENABLE_FILE_AUTOMATION else "disabled",
+            "detail": "로컬 문서 로드 및 내보내기",
+        },
+        {
+            "id": "vision.experiments",
+            "label": "Vision Experiments",
+            "status": "granted" if ENABLE_VISION_EXPERIMENTS else "disabled",
+            "detail": "카메라 미리보기 및 얼굴 중심 정렬 실험",
+        },
+        {
+            "id": "web.search",
+            "label": "Web Search",
+            "status": "disabled" if not ENABLE_WEB_SEARCH else "granted",
+            "detail": "검색 기반 문서 보강은 아직 비활성",
+        },
+        {
+            "id": "system.actions",
+            "label": "System Actions",
+            "status": "disabled" if not ENABLE_SYSTEM_ACTIONS else "experimental",
+            "detail": "클릭 / 키입력 같은 컴퓨터 유즈 액션은 아직 준비 단계",
+        },
+    ]
+
+
+def tool_registry():
+    hwpforge = hwpforge_status()
+    return [
+        {
+            "id": "writer_blocks",
+            "label": "Writer Blocks",
+            "category": "documents",
+            "status": "ready",
+            "detail": "구조화 문서 블록 적용 엔진",
+        },
+        {
+            "id": "hwpforge",
+            "label": "HwpForge",
+            "category": "format",
+            "status": "ready" if hwpforge["available"] else "offline",
+            "detail": hwpforge["detail"],
+        },
+        {
+            "id": "gemma4_planner",
+            "label": "Gemma 4 Planner",
+            "category": "llm",
+            "status": "ready" if is_ollama_base_url() else "partial",
+            "detail": f"{LLM_MODEL} via {LLM_BASE_URL}",
+        },
+        {
+            "id": "vision_lab",
+            "label": "Vision Lab",
+            "category": "vision",
+            "status": "ready" if ENABLE_VISION_EXPERIMENTS else "disabled",
+            "detail": "Electron 실험실 기반 카메라 / 정렬 테스트",
+        },
+        {
+            "id": "web_search",
+            "label": "Web Search",
+            "category": "research",
+            "status": "disabled" if not ENABLE_WEB_SEARCH else "experimental",
+            "detail": "검색 증강 파이프라인 연결 예정",
+        },
+        {
+            "id": "system_actions",
+            "label": "System Actions",
+            "category": "automation",
+            "status": "disabled" if not ENABLE_SYSTEM_ACTIONS else "experimental",
+            "detail": "권한 게이트 뒤 시스템 액션 실행 예정",
+        },
+    ]
+
+
+def runtime_registry():
+    return {
+        "llm": {"model": LLM_MODEL, "baseUrl": LLM_BASE_URL, "ollama": is_ollama_base_url()},
+        "permissions": permission_registry(),
+        "tools": tool_registry(),
+    }
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
@@ -819,6 +914,9 @@ class Handler(SimpleHTTPRequestHandler):
                     "hwpforge": hwpforge_status(),
                 }
             )
+            return
+        if self.path == "/api/runtime":
+            self._send_json({"ok": True, "runtime": runtime_registry()})
             return
         if self.path == "/":
             self.path = "/index.html"

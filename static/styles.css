@@ -180,6 +180,64 @@ input {
   margin-top: 14px;
 }
 
+.registry-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.registry-panel {
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.registry-title {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.registry-list {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.registry-row {
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.registry-row strong {
+  display: block;
+  font-size: 13px;
+}
+
+.registry-row span {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0.82;
+}
+
+.registry-state {
+  display: inline-flex;
+  margin-top: 7px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.1);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .mission-tag {
   padding: 7px 10px;
   border-radius: 999px;
@@ -457,5 +515,9 @@ textarea {
   .panel,
   .workspace {
     min-height: auto;
+  }
+
+  .registry-grid {
+    grid-template-columns: 1fr;
   }
 }

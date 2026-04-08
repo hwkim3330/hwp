@@ -43,6 +43,8 @@ const elements = {
   capLlmMeta: document.querySelector("#cap-llm-meta"),
   capHwpforge: document.querySelector("#cap-hwpforge"),
   capHwpforgeMeta: document.querySelector("#cap-hwpforge-meta"),
+  toolRegistry: document.querySelector("#tool-registry"),
+  permissionRegistry: document.querySelector("#permission-registry"),
   promptChips: [...document.querySelectorAll(".prompt-chip")],
 };
 
@@ -134,6 +136,46 @@ async function refreshAgentHealth() {
     elements.capHwpforge.textContent = "unknown";
     elements.capHwpforgeMeta.textContent = String(error.message || error);
     setRuntimeBadge("Offline");
+  }
+}
+
+function renderRegistryRows(target, items, emptyText) {
+  if (!target) {
+    return;
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    target.textContent = emptyText;
+    return;
+  }
+  target.innerHTML = items
+    .map(
+      (item) => `
+        <div class="registry-row">
+          <strong>${escapeHtml(item.label || item.id || "unknown")}</strong>
+          <span>${escapeHtml(item.detail || "")}</span>
+          <span class="registry-state">${escapeHtml(item.status || "unknown")}</span>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+async function refreshRuntimeRegistry() {
+  try {
+    const response = await fetch("/api/runtime", { cache: "no-store" });
+    const data = await response.json();
+    if (!data.ok) {
+      throw new Error("runtime unavailable");
+    }
+    renderRegistryRows(elements.toolRegistry, data.runtime?.tools, "도구 없음");
+    renderRegistryRows(elements.permissionRegistry, data.runtime?.permissions, "권한 정보 없음");
+  } catch (error) {
+    if (elements.toolRegistry) {
+      elements.toolRegistry.textContent = "도구 레지스트리 로드 실패";
+    }
+    if (elements.permissionRegistry) {
+      elements.permissionRegistry.textContent = String(error.message || error);
+    }
   }
 }
 
@@ -1547,6 +1589,7 @@ async function boot() {
   renderSlides();
   await refreshDocumentView();
   await refreshAgentHealth();
+  await refreshRuntimeRegistry();
   setMode(state.mode || "writer");
   setStatus(
     "준비 완료",

@@ -18,6 +18,7 @@ let hardwareInfo = {
   gpuLoad: null,
   npuLabel: "Unavailable",
 };
+let previousSample = null;
 
 function monitorMood(stats) {
   const stress = Math.max(stats.cpu, stats.mem);
@@ -143,19 +144,54 @@ function createMonitorWindow() {
 }
 
 async function fetchStats() {
-  const [load, memory, battery] = await Promise.all([
+  const [load, memory, battery, fsStats, networkStats] = await Promise.all([
     si.currentLoad(),
     si.mem(),
     si.battery(),
+    si.fsStats(),
+    si.networkStats(),
   ]);
 
   const cpu = Math.round(load.currentLoad);
   const mem = Math.round((memory.active / memory.total) * 100);
   const batt = battery.hasBattery ? Math.round(battery.percent) : null;
+  const now = Date.now();
+  const network = Array.isArray(networkStats) ? networkStats.find((item) => item.operstate === "up") || networkStats[0] : null;
+  let netRxPerSec = 0;
+  let netTxPerSec = 0;
+  let diskReadPerSec = 0;
+  let diskWritePerSec = 0;
+  if (previousSample && now > previousSample.ts) {
+    const seconds = (now - previousSample.ts) / 1000;
+    if (seconds > 0) {
+      if (network && previousSample.network) {
+        netRxPerSec = Math.max(0, (network.rx_bytes - previousSample.network.rx_bytes) / seconds);
+        netTxPerSec = Math.max(0, (network.tx_bytes - previousSample.network.tx_bytes) / seconds);
+      }
+      if (fsStats && previousSample.fs) {
+        diskReadPerSec = Math.max(0, (fsStats.rx - previousSample.fs.rx) / seconds);
+        diskWritePerSec = Math.max(0, (fsStats.wx - previousSample.fs.wx) / seconds);
+      }
+    }
+  }
+  previousSample = {
+    ts: now,
+    network: network ? { rx_bytes: network.rx_bytes, tx_bytes: network.tx_bytes } : null,
+    fs: fsStats ? { rx: fsStats.rx, wx: fsStats.wx } : null,
+  };
   return {
     cpu,
     mem,
     batt,
+    loadAvg: Number(load.avgLoad || 0).toFixed(2),
+    batteryCycleCount: battery.cycleCount ?? null,
+    isCharging: Boolean(battery.isCharging),
+    acConnected: Boolean(battery.acConnected),
+    netRxPerSec: Math.round(netRxPerSec),
+    netTxPerSec: Math.round(netTxPerSec),
+    diskReadPerSec: Math.round(diskReadPerSec),
+    diskWritePerSec: Math.round(diskWritePerSec),
+    cpuCores: Array.isArray(load.cpus) ? load.cpus.map((item) => Math.round(item.load || 0)) : [],
     gpuLabel: hardwareInfo.gpuLabel,
     gpuLoad: hardwareInfo.gpuLoad,
     npuLabel: hardwareInfo.npuLabel,

@@ -117,6 +117,55 @@ function textToSafeHtml(text) {
     .join("");
 }
 
+function blocksToText(blocks) {
+  if (!Array.isArray(blocks)) {
+    return "";
+  }
+  const lines = [];
+  blocks.forEach((block) => {
+    if (!block || typeof block !== "object") {
+      return;
+    }
+    if (block.kind === "heading") {
+      if (block.text) {
+        lines.push(String(block.text).trim());
+        lines.push("");
+      }
+      return;
+    }
+    if (block.kind === "paragraph") {
+      if (block.text) {
+        lines.push(String(block.text).trim());
+        lines.push("");
+      }
+      return;
+    }
+    if (block.kind === "bullets") {
+      (block.items || []).forEach((item) => lines.push(`- ${String(item).trim()}`));
+      lines.push("");
+      return;
+    }
+    if (block.kind === "numbered") {
+      (block.items || []).forEach((item, index) => lines.push(`${index + 1}. ${String(item).trim()}`));
+      lines.push("");
+      return;
+    }
+    if (block.kind === "table") {
+      const headers = Array.isArray(block.headers) ? block.headers.map((item) => String(item).trim()) : [];
+      if (headers.length > 0) {
+        lines.push(headers.join(" | "));
+      }
+      (block.rows || []).forEach((row) => {
+        if (Array.isArray(row)) {
+          lines.push(row.map((cell) => String(cell).trim()).join(" | "));
+        }
+      });
+      lines.push("");
+    }
+  });
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function htmlToStructuredText(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(`<div>${String(html || "")}</div>`, "text/html");
@@ -284,6 +333,19 @@ function replaceParagraphWithText(section, paragraph, text) {
 function applyWriterHtml(section, paragraph, offset, html, mode = "replace_all") {
   const safeHtml = normalizeHtmlForRhwp(html);
   const plainText = htmlToStructuredText(safeHtml);
+  if (mode === "replace_all") {
+    replaceWriterWithText(plainText);
+    return;
+  }
+  if (mode === "append") {
+    appendWriterText(plainText);
+    return;
+  }
+  replaceParagraphWithText(section, paragraph, plainText);
+}
+
+function applyWriterBlocks(section, paragraph, blocks, mode = "replace_all") {
+  const plainText = blocksToText(blocks);
   if (mode === "replace_all") {
     replaceWriterWithText(plainText);
     return;
@@ -667,12 +729,34 @@ function paragraphExists(section, paragraph) {
 }
 
 function applyOperation(operation) {
-  if (!state.doc && ["set_document_html", "append_html", "replace_paragraph_text", "replace_paragraph_html"].includes(operation.type)) {
+  if (!state.doc && [
+    "set_document_blocks",
+    "set_document_html",
+    "append_blocks",
+    "append_html",
+    "replace_paragraph_text",
+    "replace_paragraph_blocks",
+    "replace_paragraph_html",
+  ].includes(operation.type)) {
     throw new Error("문서가 로드되지 않았습니다.");
+  }
+
+  if (operation.type === "set_document_blocks") {
+    applyWriterBlocks(0, 0, operation.blocks, "replace_all");
+    persistWorkspace();
+    return;
   }
 
   if (operation.type === "set_document_html") {
     applyWriterHtml(0, 0, 0, operation.html, "replace_all");
+    persistWorkspace();
+    return;
+  }
+
+  if (operation.type === "append_blocks") {
+    const summary = getDocumentSummary();
+    const last = summary.paragraphs.at(-1) ?? { section: 0, paragraph: 0 };
+    applyWriterBlocks(last.section, last.paragraph, operation.blocks, "append");
     persistWorkspace();
     return;
   }
@@ -697,6 +781,19 @@ function applyOperation(operation) {
     if (operation.text) {
       state.doc.insertText(operation.section, operation.paragraph, 0, operation.text);
     }
+    return;
+  }
+
+  if (operation.type === "replace_paragraph_blocks") {
+    if (!paragraphExists(operation.section, operation.paragraph)) {
+      throw new Error(`문단 없음: ${operation.section}:${operation.paragraph}`);
+    }
+    const length = getParagraphLength(operation.section, operation.paragraph);
+    if (length > 0) {
+      state.doc.deleteText(operation.section, operation.paragraph, 0, length);
+    }
+    applyWriterBlocks(operation.section, operation.paragraph, operation.blocks, "replace_paragraph");
+    persistWorkspace();
     return;
   }
 

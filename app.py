@@ -3,6 +3,7 @@
 import json
 import os
 import re
+from html.parser import HTMLParser
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -29,9 +30,10 @@ SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
 
 편집 원칙:
 - 현재 작업 모드(mode)에 맞는 출력을 우선한다.
-- 표, 제목, 번호 목록, 강조가 필요하면 HTML로 표현한다.
-- 문서를 전면 재작성할 필요가 있으면 set_document_html을 사용한다.
-- 기존 문서의 일부만 고치면 replace_paragraph_text 또는 replace_paragraph_html을 사용한다.
+- writer 모드에서는 가능하면 구조화된 blocks를 우선 사용한다.
+- 표, 제목, 번호 목록이 필요하면 blocks 또는 제한된 HTML로 표현한다.
+- 문서를 전면 재작성할 필요가 있으면 set_document_blocks 또는 set_document_html을 사용한다.
+- 기존 문서의 일부만 고치면 replace_paragraph_text, replace_paragraph_blocks 또는 replace_paragraph_html을 사용한다.
 - notes 모드에서는 set_note_text를 사용한다.
 - sheet 모드에서는 set_sheet_data를 사용한다.
 - slides 모드에서는 set_slides를 사용한다.
@@ -43,8 +45,23 @@ SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
   "reply": "사용자에게 보여줄 짧은 설명",
   "operations": [
     {
+      "type": "set_document_blocks",
+      "blocks": [
+        {"kind": "heading", "level": 1, "text": "제목"},
+        {"kind": "paragraph", "text": "문단 내용"},
+        {"kind": "bullets", "items": ["항목 1", "항목 2"]},
+        {"kind": "table", "headers": ["항목", "내용"], "rows": [["1", "설명"]]}
+      ]
+    },
+    {
       "type": "set_document_html",
       "html": "<h1>...</h1><p>...</p>"
+    },
+    {
+      "type": "append_blocks",
+      "blocks": [
+        {"kind": "paragraph", "text": "추가 문단"}
+      ]
     },
     {
       "type": "append_html",
@@ -55,6 +72,14 @@ SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
       "section": 0,
       "paragraph": 1,
       "text": "새 문단 텍스트"
+    },
+    {
+      "type": "replace_paragraph_blocks",
+      "section": 0,
+      "paragraph": 1,
+      "blocks": [
+        {"kind": "paragraph", "text": "새 문단 텍스트"}
+      ]
     },
     {
       "type": "replace_paragraph_html",
@@ -90,6 +115,7 @@ SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
 - JSON 외 텍스트 금지.
 - operations는 반드시 배열.
 - 문단 인덱스는 제공된 스냅샷 기준을 사용한다.
+- blocks의 kind는 heading, paragraph, bullets, numbered, table만 사용한다.
 - HTML은 table, thead, tbody, tr, th, td, h1, h2, h3, p, ul, ol, li, strong, em, br만 사용한다.
 - notes는 일반 텍스트만 사용한다.
 - sheet rows는 columns 키와 맞는 객체 배열로 반환한다.
@@ -163,8 +189,12 @@ def validate_plan(plan):
         if not isinstance(op, dict):
             continue
         op_type = op.get("type")
-        if op_type == "set_document_html" and isinstance(op.get("html"), str):
+        if op_type == "set_document_blocks":
+            cleaned.append({"type": op_type, "blocks": normalize_blocks(op.get("blocks", []))})
+        elif op_type == "set_document_html" and isinstance(op.get("html"), str):
             cleaned.append({"type": op_type, "html": op["html"]})
+        elif op_type == "append_blocks":
+            cleaned.append({"type": op_type, "blocks": normalize_blocks(op.get("blocks", []))})
         elif op_type == "append_html" and isinstance(op.get("html"), str):
             cleaned.append({"type": op_type, "html": op["html"]})
         elif op_type == "replace_paragraph_text":
@@ -174,6 +204,15 @@ def validate_plan(plan):
                     "section": int(op.get("section", 0)),
                     "paragraph": int(op.get("paragraph", 0)),
                     "text": str(op.get("text", "")),
+                }
+            )
+        elif op_type == "replace_paragraph_blocks":
+            cleaned.append(
+                {
+                    "type": op_type,
+                    "section": int(op.get("section", 0)),
+                    "paragraph": int(op.get("paragraph", 0)),
+                    "blocks": normalize_blocks(op.get("blocks", [])),
                 }
             )
         elif op_type == "replace_paragraph_html":
@@ -219,6 +258,37 @@ def validate_plan(plan):
     }
 
 
+def normalize_blocks(blocks):
+    normalized = []
+    for block in blocks[:80]:
+        if not isinstance(block, dict):
+            continue
+        kind = str(block.get("kind", "")).strip()
+        if kind == "heading":
+            level = int(block.get("level", 1))
+            normalized.append(
+                {
+                    "kind": "heading",
+                    "level": max(1, min(3, level)),
+                    "text": str(block.get("text", ""))[:2000],
+                }
+            )
+        elif kind == "paragraph":
+            normalized.append({"kind": "paragraph", "text": str(block.get("text", ""))[:4000]})
+        elif kind in {"bullets", "numbered"}:
+            items = [str(item)[:800] for item in block.get("items", [])[:20] if str(item).strip()]
+            normalized.append({"kind": kind, "items": items})
+        elif kind == "table":
+            headers = [str(item)[:200] for item in block.get("headers", [])[:12]]
+            rows = []
+            for row in block.get("rows", [])[:40]:
+                if not isinstance(row, list):
+                    continue
+                rows.append([str(cell)[:400] for cell in row[:12]])
+            normalized.append({"kind": "table", "headers": headers, "rows": rows})
+    return normalized
+
+
 def paragraph_texts(document):
     paragraphs = document.get("paragraphs", [])
     return [str(item.get("text", "")).strip() for item in paragraphs if str(item.get("text", "")).strip()]
@@ -226,6 +296,144 @@ def paragraph_texts(document):
 
 def html_paragraphs(lines):
     return "".join(f"<p>{line}</p>" for line in lines if line.strip())
+
+
+def blocks_to_html(blocks):
+    parts = []
+    for block in normalize_blocks(blocks):
+        kind = block["kind"]
+        if kind == "heading":
+            level = block.get("level", 1)
+            tag = f"h{max(1, min(3, level))}"
+            parts.append(f"<{tag}>{escape_html(block.get('text', ''))}</{tag}>")
+        elif kind == "paragraph":
+            parts.append(f"<p>{escape_html(block.get('text', '')).replace(chr(10), '<br>')}</p>")
+        elif kind == "bullets":
+            items = "".join(f"<li>{escape_html(item)}</li>" for item in block.get("items", []))
+            parts.append(f"<ul>{items}</ul>")
+        elif kind == "numbered":
+            items = "".join(f"<li>{escape_html(item)}</li>" for item in block.get("items", []))
+            parts.append(f"<ol>{items}</ol>")
+        elif kind == "table":
+            headers = "".join(f"<th>{escape_html(item)}</th>" for item in block.get("headers", []))
+            rows = []
+            for row in block.get("rows", []):
+                cells = "".join(f"<td>{escape_html(cell)}</td>" for cell in row)
+                rows.append(f"<tr>{cells}</tr>")
+            parts.append(f"<table><thead><tr>{headers}</tr></thead><tbody>{''.join(rows)}</tbody></table>")
+    return "".join(parts)
+
+
+def escape_html(text):
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def build_generic_writer_blocks(prompt):
+    return [
+        {"kind": "heading", "level": 1, "text": "업무 문서 초안"},
+        {"kind": "paragraph", "text": f"요청 사항\n{prompt}"},
+        {
+            "kind": "heading",
+            "level": 2,
+            "text": "핵심 내용",
+        },
+        {
+            "kind": "bullets",
+            "items": [
+                "요청 목적과 배경을 정리합니다.",
+                "실행 항목과 일정을 구분합니다.",
+                "후속 조치와 담당자를 명확히 합니다.",
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "실행 계획"},
+        {
+            "kind": "table",
+            "headers": ["항목", "내용", "기한"],
+            "rows": [
+                ["1", "초안 검토", "즉시"],
+                ["2", "의견 반영", "협의 후"],
+                ["3", "최종 확정", "승인 후"],
+            ],
+        },
+    ]
+
+
+class BlockHtmlParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.blocks = []
+        self.stack = []
+        self.current_table = None
+        self.current_row = None
+        self.current_cell = []
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        self.stack.append(tag)
+        if tag == "table":
+            self.current_table = {"kind": "table", "headers": [], "rows": []}
+        elif tag == "tr":
+            self.current_row = []
+        elif tag in {"th", "td"}:
+            self.current_cell = []
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        text = self._flush_text_for(tag)
+        if tag in {"h1", "h2", "h3"} and text:
+            self.blocks.append({"kind": "heading", "level": int(tag[1]), "text": text})
+        elif tag == "p" and text:
+            self.blocks.append({"kind": "paragraph", "text": text})
+        elif tag == "ul" and text:
+            self.blocks.append({"kind": "bullets", "items": [item for item in text.split("\n") if item]})
+        elif tag == "ol" and text:
+            self.blocks.append({"kind": "numbered", "items": [item for item in text.split("\n") if item]})
+        elif tag in {"th", "td"}:
+            self.current_row.append(text)
+        elif tag == "tr" and self.current_table is not None and self.current_row is not None:
+            if self.current_table["headers"]:
+                self.current_table["rows"].append(self.current_row)
+            else:
+                self.current_table["headers"] = self.current_row
+            self.current_row = None
+        elif tag == "table" and self.current_table is not None:
+            self.blocks.append(self.current_table)
+            self.current_table = None
+        if self.stack:
+            self.stack.pop()
+
+    def handle_data(self, data):
+        if not self.stack:
+            return
+        tag = self.stack[-1]
+        if tag in {"th", "td"}:
+            self.current_cell.append(data)
+        else:
+            text = data.strip()
+            if text:
+                self.current_cell.append(text)
+
+    def _flush_text_for(self, tag):
+        text = " ".join(part.strip() for part in self.current_cell if part.strip()).strip()
+        if tag in {"li"} and text:
+            self.current_cell = []
+            return text
+        if tag in {"ul", "ol"}:
+            text = "\n".join(part.strip() for part in self.current_cell if part.strip())
+        self.current_cell = []
+        return text
+
+
+def html_to_blocks(html):
+    parser = BlockHtmlParser()
+    parser.feed(str(html or ""))
+    blocks = normalize_blocks(parser.blocks)
+    return blocks or build_generic_writer_blocks("내용 없음")
 
 
 def build_weekly_report_html():
@@ -378,7 +586,16 @@ def build_slides_data(prompt):
 
 def is_mode_compatible(mode, operations):
     allowed_map = {
-        "writer": {"set_document_html", "append_html", "replace_paragraph_text", "replace_paragraph_html", "no_op"},
+        "writer": {
+            "set_document_blocks",
+            "set_document_html",
+            "append_blocks",
+            "append_html",
+            "replace_paragraph_text",
+            "replace_paragraph_blocks",
+            "replace_paragraph_html",
+            "no_op",
+        },
         "notes": {"set_note_text", "no_op"},
         "sheet": {"set_sheet_data", "no_op"},
         "slides": {"set_slides", "no_op"},
@@ -456,24 +673,13 @@ def fallback_plan(user_prompt, document, workspace, reason):
         html = build_polish_html(document)
         reply = "기존 문서를 정돈된 문체로 재구성했습니다."
     else:
-        html = (
-            "<h1>업무 문서 초안</h1>"
-            f"<p><strong>요청 사항</strong><br>{prompt}</p>"
-            "<h2>핵심 내용</h2>"
-            "<ul>"
-            "<li>요청 목적과 배경을 정리합니다.</li>"
-            "<li>실행 항목과 일정을 구분합니다.</li>"
-            "<li>후속 조치와 담당자를 명확히 합니다.</li>"
-            "</ul>"
-            "<h2>실행 계획</h2>"
-            "<table><thead><tr><th>항목</th><th>내용</th><th>기한</th></tr></thead>"
-            "<tbody>"
-            "<tr><td>1</td><td>초안 검토</td><td>즉시</td></tr>"
-            "<tr><td>2</td><td>의견 반영</td><td>협의 후</td></tr>"
-            "<tr><td>3</td><td>최종 확정</td><td>승인 후</td></tr>"
-            "</tbody></table>"
-        )
+        blocks = build_generic_writer_blocks(prompt)
         reply = "기본 업무 문서 초안을 생성했습니다."
+        return {
+            "reply": f"{reply} 오프라인 플래너를 사용했습니다.",
+            "operations": [{"type": "set_document_blocks", "blocks": blocks}],
+            "meta": {"planner": "fallback", "reason": reason},
+        }
 
     return {
         "reply": f"{reply} 오프라인 플래너를 사용했습니다.",

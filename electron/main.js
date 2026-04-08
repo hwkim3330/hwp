@@ -19,6 +19,23 @@ let hardwareInfo = {
   npuLabel: "Unavailable",
 };
 
+function monitorMood(stats) {
+  const stress = Math.max(stats.cpu, stats.mem);
+  if (stress >= 90) {
+    return { emoji: "🔥", face: "x_x", label: "critical" };
+  }
+  if (stress >= 75) {
+    return { emoji: "😵", face: ">_<", label: "busy" };
+  }
+  if (stress >= 55) {
+    return { emoji: "😼", face: "^_^", label: "active" };
+  }
+  if (stress >= 30) {
+    return { emoji: "🙂", face: "o_o", label: "steady" };
+  }
+  return { emoji: "😴", face: "-_-", label: "idle" };
+}
+
 function createTrayImage() {
   const image = nativeImage.createEmpty();
   image.setTemplateImage(true);
@@ -162,13 +179,14 @@ async function loadHardwareInfo() {
 async function updateMonitor() {
   try {
     const stats = await fetchStats();
-    const title = `CPU ${stats.cpu}% MEM ${stats.mem}%${stats.batt === null ? "" : ` BAT ${stats.batt}%`}`;
+    const mood = monitorMood(stats);
+    const title = `${mood.emoji} ${stats.cpu}% ${stats.mem}%${stats.batt === null ? "" : ` ${stats.batt}%`}`;
     if (tray) {
       tray.setTitle(title);
-      tray.setToolTip(`Office Agent Staff\n${title}`);
+      tray.setToolTip(`Office Agent Staff\n${mood.label.toUpperCase()}  CPU ${stats.cpu}%  MEM ${stats.mem}%${stats.batt === null ? "" : `  BAT ${stats.batt}%`}`);
     }
     if (monitorWindow && !monitorWindow.isDestroyed()) {
-      monitorWindow.webContents.send("system-stats", stats);
+      monitorWindow.webContents.send("system-stats", { ...stats, mood });
     }
   } catch (error) {
     if (tray) {

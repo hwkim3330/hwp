@@ -1,5 +1,5 @@
 {
-  "name": "geulbit",
+  "name": "hwp",
   "version": "1.1.0",
   "description": "`rhwp`를 브라우저 편집 엔진으로 활용하고, `claw-code`의 도구 지향 에이전트 발상을 차용한 한국어 문서 작성용 오피스 에이전트입니다.",
   "main": "electron/main.js",
@@ -7,12 +7,12 @@
     "desktop": "electron .",
     "desktop:dev": "electron .",
     "package:mac": "electron-builder --mac dmg zip",
-    "release:github": "VERSION=$(node -p \"require('./package.json').version\") && gh release create \"v$VERSION\" dist-electron/*.dmg dist-electron/*.zip --repo hwkim3330/geulbit --generate-notes",
+    "release:github": "VERSION=$(node -p \"require('./package.json').version\") && gh release create \"v$VERSION\" dist-electron/*.dmg dist-electron/*.zip --repo hwkim3330/hwp --generate-notes",
     "test": "node --check electron/main.js && node --check electron/preload.js && python3 -m py_compile app.py"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hwkim3330/geulbit.git"
+    "url": "git+https://github.com/hwkim3330/hwp.git"
   },
   "keywords": [
     "office",
@@ -25,9 +25,9 @@
   "license": "MIT",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/hwkim3330/geulbit/issues"
+    "url": "https://github.com/hwkim3330/hwp/issues"
   },
-  "homepage": "https://github.com/hwkim3330/geulbit#readme",
+  "homepage": "https://github.com/hwkim3330/hwp#readme",
   "dependencies": {
     "systeminformation": "^5.27.11"
   },
@@ -37,7 +37,7 @@
   },
   "build": {
     "appId": "com.hwkim.officeagentstaff",
-    "productName": "Geulbit",
+    "productName": "hwp",
     "directories": {
       "output": "dist-electron"
     },

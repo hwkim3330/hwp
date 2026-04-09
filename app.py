@@ -27,7 +27,7 @@ ENABLE_WEB_SEARCH = os.environ.get("ENABLE_WEB_SEARCH", "1") != "0"
 ENABLE_VISION_EXPERIMENTS = os.environ.get("ENABLE_VISION_EXPERIMENTS", "1") != "0"
 ENABLE_SYSTEM_ACTIONS = os.environ.get("ENABLE_SYSTEM_ACTIONS", "1") != "0"
 ENABLE_FILE_AUTOMATION = os.environ.get("ENABLE_FILE_AUTOMATION", "1") != "0"
-USER_AGENT = "Geulbit/1.0 (+https://github.com/hwkim3330/geulbit)"
+USER_AGENT = "hwp/1.0 (+https://github.com/hwkim3330/hwp)"
 
 
 SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
@@ -1195,7 +1195,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
-    print(f"Geulbit listening on http://{HOST}:{PORT}")
+    print(f"hwp listening on http://{HOST}:{PORT}")
     print(f"LLM endpoint: {LLM_BASE_URL}/chat/completions")
     print(f"Model: {LLM_MODEL}")
     print(f"LLM timeout: {LLM_TIMEOUT_SECONDS}s")

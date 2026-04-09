@@ -81,6 +81,20 @@ input {
   pointer-events: none;
 }
 
+.dashboard-shell {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.dashboard-card {
+  min-height: 132px;
+  background:
+    linear-gradient(180deg, rgba(255, 252, 247, 0.94), rgba(244, 236, 223, 0.88)),
+    linear-gradient(135deg, rgba(20, 76, 101, 0.06), rgba(204, 106, 42, 0.06));
+}
+
 .mode-tabs {
   display: flex;
   gap: 10px;
@@ -619,6 +633,10 @@ textarea {
 
 @media (max-width: 1200px) {
   .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-shell {
     grid-template-columns: 1fr;
   }
 

@@ -32,6 +32,9 @@ const elements = {
   statusBox: document.querySelector("#status-box"),
   renderBadge: document.querySelector("#render-badge"),
   agentRuntime: document.querySelector("#agent-runtime"),
+  dashboardNow: document.querySelector("#dashboard-now"),
+  dashboardCapture: document.querySelector("#dashboard-capture"),
+  dashboardPlan: document.querySelector("#dashboard-plan"),
   modeHint: document.querySelector("#mode-hint"),
   pages: document.querySelector("#pages"),
   promptInput: document.querySelector("#prompt-input"),
@@ -111,6 +114,9 @@ function setRuntimeBadge(message) {
   if (elements.agentRuntime) {
     elements.agentRuntime.textContent = message;
   }
+  if (elements.dashboardNow) {
+    elements.dashboardNow.textContent = `런타임 상태: ${message}`;
+  }
 }
 
 function setMode(mode) {
@@ -138,11 +144,17 @@ function setWorkflowHint(message) {
   if (elements.workflowHint) {
     elements.workflowHint.textContent = message;
   }
+  if (elements.dashboardCapture) {
+    elements.dashboardCapture.textContent = message;
+  }
 }
 
 function setEngineMeta(message) {
   if (elements.engineMeta) {
     elements.engineMeta.textContent = message;
+  }
+  if (elements.dashboardPlan) {
+    elements.dashboardPlan.textContent = message;
   }
 }
 
@@ -211,6 +223,9 @@ async function refreshAgentHealth() {
     }
     setEngineMeta(`ONLYOFFICE Docs: ${health.onlyoffice?.docsUrl || "http://127.0.0.1:8080"} | active sessions ${health.onlyoffice?.sessions ?? 0}`);
     setRuntimeBadge(health.hwpforge?.available ? "Local Ops Ready" : "Partial Local Mode");
+    if (elements.dashboardNow) {
+      elements.dashboardNow.textContent = `모델 ${health.model || "unknown"} · HWPX ${health.hwpforge?.available ? "ready" : "offline"} · OOXML 세션 ${health.onlyoffice?.sessions ?? 0}`;
+    }
   } catch (error) {
     elements.capLlm.textContent = "offline";
     elements.capLlmMeta.textContent = "health check failed";
@@ -1871,6 +1886,9 @@ async function runAgent() {
     const plan = result.plan;
     elements.planBox.textContent = JSON.stringify(plan, null, 2);
     elements.plannerMeta.textContent = `플래너: ${plan.meta?.planner || "-"}${plan.meta?.reason ? ` | 사유: ${plan.meta.reason}` : ""}${plan.meta?.search_results ? ` | 검색 결과: ${plan.meta.search_results}` : ""}`;
+    if (elements.dashboardPlan) {
+      elements.dashboardPlan.textContent = `${plan.reply || "작업 완료"} · 작업 ${plan.operations.filter((item) => item.type !== "no_op").length}개`;
+    }
 
     for (const operation of plan.operations) {
       if (operation.type === "no_op") {

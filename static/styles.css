@@ -221,7 +221,8 @@ input {
   color: var(--accent);
 }
 
-.cap-grid {
+.cap-grid,
+.core-strip {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
@@ -264,11 +265,46 @@ input {
   margin-top: 14px;
 }
 
+.command-card-note {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.command-card-note .cap-meta {
+  margin-top: 0;
+}
+
 .registry-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-top: 14px;
+}
+
+.drawer-card > summary {
+  list-style: none;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.drawer-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.drawer-card > summary::after {
+  content: "+";
+  float: right;
+  color: var(--muted);
+}
+
+.drawer-card[open] > summary::after {
+  content: "-";
+}
+
+.drawer-card > :not(summary) {
+  margin-top: 12px;
 }
 
 .registry-panel {

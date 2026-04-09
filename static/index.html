@@ -169,47 +169,46 @@
             </div>
             <span id="agent-runtime" class="badge runtime-badge">대기</span>
           </div>
-          <div class="cap-grid">
+          <div class="core-strip">
             <div class="cap-item">
               <span class="cap-label">LLM</span>
               <strong id="cap-llm">확인 중</strong>
-              <span id="cap-llm-meta" class="cap-meta">로컬 모델 상태</span>
             </div>
             <div class="cap-item">
               <span class="cap-label">HWPX</span>
               <strong id="cap-hwpforge">확인 중</strong>
-              <span id="cap-hwpforge-meta" class="cap-meta">변환 / 패치 엔진</span>
             </div>
             <div class="cap-item">
-              <span class="cap-label">Vision</span>
-              <strong>실험실</strong>
-              <span class="cap-meta">Electron Vision Lab 연동</span>
-            </div>
-            <div class="cap-item">
-              <span class="cap-label">System</span>
+              <span class="cap-label">Route</span>
               <strong id="cap-computer-use">확인 중</strong>
-              <span id="cap-computer-use-meta" class="cap-meta">권한 기반 컴퓨터 유즈</span>
+            </div>
+            <div class="cap-item">
+              <span class="cap-label">Focus</span>
+              <strong>Command</strong>
             </div>
           </div>
-          <div class="mission-strip">
-            <span class="mission-tag">Documents</span>
-            <span class="mission-tag">Vision</span>
-            <span class="mission-tag">Automation</span>
-            <span class="mission-tag">Local AI</span>
+          <div class="command-card-note">
+            <span id="cap-llm-meta" class="cap-meta">로컬 모델 상태</span>
+            <span id="cap-hwpforge-meta" class="cap-meta">변환 / 패치 엔진</span>
+            <span id="cap-computer-use-meta" class="cap-meta">권한 기반 컴퓨터 유즈</span>
           </div>
-          <div class="registry-grid">
-            <div class="registry-panel">
-              <div class="registry-title">Tools</div>
-              <div id="tool-registry" class="registry-list">로딩 중...</div>
+          <details class="drawer-card">
+            <summary>상세 상태</summary>
+            <div class="registry-grid">
+              <div class="registry-panel">
+                <div class="registry-title">Tools</div>
+                <div id="tool-registry" class="registry-list">로딩 중...</div>
+              </div>
+              <div class="registry-panel">
+                <div class="registry-title">Permissions</div>
+                <div id="permission-registry" class="registry-list">로딩 중...</div>
+              </div>
             </div>
-            <div class="registry-panel">
-              <div class="registry-title">Permissions</div>
-              <div id="permission-registry" class="registry-list">로딩 중...</div>
-            </div>
-          </div>
+          </details>
         </div>
 
-        <div class="card ops-card">
+        <details class="card ops-card drawer-card">
+          <summary>문서 액션</summary>
           <div class="command-head">
             <div>
               <p class="eyebrow">Workflow</p>
@@ -238,9 +237,10 @@
             </label>
           </div>
           <div id="workflow-hint" class="reply planner-meta">문서 작업을 버튼으로 고르고 검색 포함 여부를 정한 뒤 실행합니다.</div>
-        </div>
+        </details>
 
-        <div class="card ops-card">
+        <details class="card ops-card drawer-card">
+          <summary>문서 엔진</summary>
           <div class="command-head">
             <div>
               <p class="eyebrow">Engine</p>
@@ -259,7 +259,7 @@
           </div>
           <div id="engine-meta" class="reply planner-meta">Writer/Sheet/Slides 상태를 OOXML 세션으로 넘겨 새 창에서 엽니다.</div>
           <div id="onlyoffice-sessions" class="ops-results">아직 생성된 세션이 없습니다.</div>
-        </div>
+        </details>
 
         <div class="card ops-card">
           <div class="command-head">
@@ -295,7 +295,8 @@
           <div id="computer-use-sessions" class="ops-results compact-sessions">아직 브라우저 세션이 없습니다.</div>
         </div>
 
-        <div class="card ops-card">
+        <details class="card ops-card drawer-card">
+          <summary>검색</summary>
           <div class="command-head">
             <div>
               <p class="eyebrow">Research</p>
@@ -307,9 +308,10 @@
             <button id="run-search" class="secondary">검색 실행</button>
           </div>
           <div id="search-results" class="ops-results">검색 결과가 없습니다.</div>
-        </div>
+        </details>
 
-        <div class="card ops-card">
+        <details class="card ops-card drawer-card">
+          <summary>시스템 액션</summary>
           <div class="command-head">
             <div>
               <p class="eyebrow">Automation</p>
@@ -322,19 +324,21 @@
             <button id="open-monitor" class="secondary">활동 모니터</button>
           </div>
           <div id="system-action-log" class="reply planner-meta">제한된 시스템 액션만 허용됩니다.</div>
-        </div>
+        </details>
 
-        <div class="card">
+        <details class="card drawer-card">
+          <summary>세션 로그</summary>
           <h2>Session Log</h2>
           <div id="session-meta" class="reply planner-meta">세션 정보 로딩 중</div>
           <div id="session-log" class="ops-results">아직 기록이 없습니다.</div>
-        </div>
+        </details>
 
-        <div class="card">
+        <details class="card drawer-card">
+          <summary>편집 계획</summary>
           <h2>편집 계획</h2>
           <pre id="plan-box">아직 실행된 계획이 없습니다.</pre>
           <div id="planner-meta" class="reply planner-meta">플래너 정보 없음</div>
-        </div>
+        </details>
       </aside>
     </div>
 

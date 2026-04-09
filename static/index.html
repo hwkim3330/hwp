@@ -24,6 +24,15 @@
         </div>
       </div>
       <div class="app-topbar-section app-topbar-right">
+        <div class="topbar-tools">
+          <button id="new-document" class="topbar-action">새 문서</button>
+          <label class="topbar-file">
+            열기
+            <input id="file-input" type="file" accept=".hwp,.hwpx,.txt,.md,.csv,.json,.docx,.xlsx,.pptx" />
+          </label>
+          <button id="export-document" class="topbar-action">HWP</button>
+          <button id="export-docx" class="topbar-action">DOCX</button>
+        </div>
         <span id="topbar-route" class="route-pill">Document</span>
         <span id="topbar-status" class="topbar-status">준비 완료</span>
       </div>
@@ -39,23 +48,14 @@
         </div>
 
         <div class="card">
-          <h2>문서</h2>
-          <div class="button-row">
-            <button id="new-document">빈 문서</button>
-            <label class="file-button">
-              파일 열기
-              <input id="file-input" type="file" accept=".hwp,.hwpx,.txt,.md,.csv,.json,.docx,.xlsx,.pptx" />
-            </label>
-            <button id="export-document" class="secondary">HWP 저장</button>
-            <button id="export-docx" class="secondary">DOCX 저장</button>
-          </div>
+          <h2>문서 요약</h2>
           <div id="doc-meta" class="meta"></div>
         </div>
 
-        <div class="card">
-          <h2>문단 개요</h2>
+        <details class="card drawer-card" open>
+          <summary>문단 개요</summary>
           <div id="outline-box" class="meta outline-box">문서가 비어 있습니다.</div>
-        </div>
+        </details>
 
         <div class="card">
           <h2>상태</h2>

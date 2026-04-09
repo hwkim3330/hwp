@@ -62,6 +62,39 @@ input {
   justify-content: flex-end;
 }
 
+.topbar-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topbar-action,
+.topbar-file {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.topbar-file {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.topbar-file input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .app-mark {
   display: inline-flex;
   align-items: center;
@@ -116,7 +149,7 @@ input {
 .shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 296px minmax(0, 1fr) 348px;
+  grid-template-columns: 240px minmax(0, 1fr) 332px;
   gap: 16px;
   padding: 16px;
 }
@@ -130,6 +163,14 @@ input {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.panel-left .brand {
+  padding-bottom: 2px;
+}
+
+.panel-left .lede {
+  font-size: 14px;
 }
 
 .workspace,

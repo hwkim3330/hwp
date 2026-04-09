@@ -241,6 +241,47 @@
         color: #2b241e;
       }
 
+      .status-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .status-panel {
+        padding: 14px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255,255,255,0.58);
+      }
+
+      .status-panel strong {
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      .status-panel span {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .meter {
+        margin-top: 12px;
+        height: 10px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(31, 26, 23, 0.08);
+      }
+
+      .meter-bar {
+        height: 100%;
+        width: 0%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #cc7241, #b04c33);
+        transition: width 120ms ease;
+      }
+
       @media (max-width: 860px) {
         .hero {
           grid-template-columns: 1fr;
@@ -349,6 +390,43 @@
         </article>
 
         <article class="card wide">
+          <span class="tag good">권한 / 입력</span>
+          <h2>Permission Console</h2>
+          <p>카메라, 마이크, 화면 기록, 접근성 상태를 한 번에 보고 바로 설정 화면으로 연결합니다.</p>
+          <div id="permission-grid" class="status-grid"></div>
+          <div id="permission-meta" class="meta">권한 상태를 확인하는 중입니다.</div>
+        </article>
+
+        <article class="card wide">
+          <span class="tag good">화면 입력</span>
+          <h2>Screen Lab</h2>
+          <p>현재 화면을 직접 받아와서 비전 실험이나 컴퓨터 유즈 입력으로 쓸 수 있게 합니다.</p>
+          <div class="button-row">
+            <button id="start-screen">화면 시작</button>
+            <button id="stop-screen" class="secondary">화면 정지</button>
+          </div>
+          <div id="screen-chip" class="status-chip">화면 입력 대기 중</div>
+          <div class="lab-stage">
+            <video id="screen-video" autoplay playsinline muted></video>
+          </div>
+          <div id="screen-meta" class="meta">getDisplayMedia를 사용합니다. 화면 기록 권한이 필요할 수 있습니다.</div>
+        </article>
+
+        <article class="card wide">
+          <span class="tag warn">오디오 입력</span>
+          <h2>Audio Lab</h2>
+          <p>마이크 입력이 실제로 들어오는지 확인합니다. 음성 명령과 반응형 피드백 실험용입니다.</p>
+          <div class="button-row">
+            <button id="start-audio">마이크 시작</button>
+            <button id="stop-audio" class="secondary">마이크 정지</button>
+            <button id="play-focus-cue" class="secondary">포커스 사운드</button>
+          </div>
+          <div id="audio-chip" class="status-chip">마이크 대기 중</div>
+          <div class="meter"><div id="audio-bar" class="meter-bar"></div></div>
+          <div id="audio-meta" class="meta">트랙패드 진동은 직접 제어하지 못하므로 현재는 사운드 큐와 시각 피드백을 사용합니다.</div>
+        </article>
+
+        <article class="card wide">
           <span class="tag warn">비공식 센서</span>
           <h2>Lid Angle Sensor</h2>
           <p>이 맥에선 공개 경로로 lid angle이 바로 잡히지 않았습니다. 화면 기울기 기반 제어는 여전히 비공식 센서 프로젝트를 통해 실험하는 편이 맞습니다.</p>
@@ -382,8 +460,73 @@
       const cameraMeta = document.getElementById("camera-meta");
       const cameraChip = document.getElementById("camera-chip");
       const faceDot = document.getElementById("face-dot");
+      const permissionGrid = document.getElementById("permission-grid");
+      const permissionMeta = document.getElementById("permission-meta");
+      const startScreen = document.getElementById("start-screen");
+      const stopScreen = document.getElementById("stop-screen");
+      const screenVideo = document.getElementById("screen-video");
+      const screenChip = document.getElementById("screen-chip");
+      const screenMeta = document.getElementById("screen-meta");
+      const startAudio = document.getElementById("start-audio");
+      const stopAudio = document.getElementById("stop-audio");
+      const playFocusCue = document.getElementById("play-focus-cue");
+      const audioChip = document.getElementById("audio-chip");
+      const audioBar = document.getElementById("audio-bar");
+      const audioMeta = document.getElementById("audio-meta");
       let stream = null;
+      let screenStream = null;
+      let audioStream = null;
       let faceTimer = null;
+      let audioContext = null;
+      let audioAnalyser = null;
+      let audioTimer = null;
+
+      function permissionLabel(status) {
+        const map = {
+          granted: "허용됨",
+          denied: "거부됨",
+          restricted: "제한됨",
+          "not-determined": "미설정",
+          unknown: "확인 불가",
+          unsupported: "미지원",
+          manual: "수동 설정",
+          "needs-manual-enable": "수동 허용 필요",
+        };
+        return map[status] || status || "-";
+      }
+
+      function renderPermissions(permissions = {}) {
+        const items = [
+          { key: "camera", title: "카메라", detail: "Camera Lab과 얼굴 추적 실험" },
+          { key: "microphone", title: "마이크", detail: "Audio Lab과 음성 명령 실험" },
+          { key: "screen", title: "화면 기록", detail: "Screen Lab과 컴퓨터 유즈 입력" },
+          { key: "accessibility", title: "접근성", detail: "자동화와 커서/키보드 제어" },
+        ];
+        permissionGrid.innerHTML = items.map((item) => `
+          <div class="status-panel">
+            <strong>${item.title}</strong>
+            <span>${item.detail}</span>
+            <div class="status-chip" style="margin-top:10px;">${permissionLabel(permissions[item.key])}</div>
+            <div class="button-row">
+              <button class="secondary permission-open" data-kind="${item.key}">권한 열기</button>
+            </div>
+          </div>
+        `).join("");
+        permissionGrid.querySelectorAll(".permission-open").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const kind = button.dataset.kind;
+            permissionMeta.textContent = `${kind} 권한 화면을 여는 중입니다.`;
+            try {
+              const result = await window.desktopMonitor.requestPermission(kind);
+              permissionMeta.textContent = result?.openedSettings
+                ? `${kind} 설정 화면을 열었습니다.`
+                : `${kind} 권한 결과: ${result?.granted ? "허용됨" : "변경 없음"}`;
+            } catch (error) {
+              permissionMeta.textContent = String(error.message || error);
+            }
+          });
+        });
+      }
 
       function stopCameraLab() {
         if (faceTimer) {
@@ -397,6 +540,73 @@
         camera.srcObject = null;
         faceDot.style.opacity = "0";
         cameraChip.textContent = "카메라 대기 중";
+      }
+
+      function stopScreenLab() {
+        if (screenStream) {
+          screenStream.getTracks().forEach((track) => track.stop());
+          screenStream = null;
+        }
+        screenVideo.srcObject = null;
+        screenChip.textContent = "화면 입력 대기 중";
+      }
+
+      async function startScreenLab() {
+        stopScreenLab();
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false,
+        });
+        screenVideo.srcObject = screenStream;
+        screenChip.textContent = "화면 입력 활성";
+        screenMeta.textContent = "현재 선택한 화면이 실시간 입력으로 들어옵니다.";
+        const track = screenStream.getVideoTracks()[0];
+        track?.addEventListener("ended", () => {
+          stopScreenLab();
+          screenMeta.textContent = "화면 입력이 종료되었습니다.";
+        });
+      }
+
+      function stopAudioLab() {
+        if (audioTimer) {
+          cancelAnimationFrame(audioTimer);
+          audioTimer = null;
+        }
+        if (audioStream) {
+          audioStream.getTracks().forEach((track) => track.stop());
+          audioStream = null;
+        }
+        if (audioContext) {
+          audioContext.close().catch(() => {});
+          audioContext = null;
+        }
+        audioAnalyser = null;
+        audioBar.style.width = "0%";
+        audioChip.textContent = "마이크 대기 중";
+      }
+
+      async function startAudioLab() {
+        stopAudioLab();
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(audioStream);
+        audioAnalyser = audioContext.createAnalyser();
+        audioAnalyser.fftSize = 256;
+        source.connect(audioAnalyser);
+        const data = new Uint8Array(audioAnalyser.frequencyBinCount);
+        const tick = () => {
+          if (!audioAnalyser) {
+            return;
+          }
+          audioAnalyser.getByteFrequencyData(data);
+          const average = data.reduce((sum, value) => sum + value, 0) / Math.max(1, data.length);
+          const width = Math.max(4, Math.min(100, average / 1.8));
+          audioBar.style.width = `${width}%`;
+          audioChip.textContent = width > 12 ? "마이크 입력 감지" : "조용한 상태";
+          audioTimer = requestAnimationFrame(tick);
+        };
+        tick();
+        audioMeta.textContent = "실시간 입력 레벨을 표시합니다. 음성 명령 실험의 입력 확인용입니다.";
       }
 
       async function startCameraLab() {
@@ -460,6 +670,44 @@
 
       stopCamera.addEventListener("click", () => {
         stopCameraLab();
+      });
+
+      startScreen.addEventListener("click", () => {
+        startScreenLab().catch((error) => {
+          screenChip.textContent = "화면 입력 실패";
+          screenMeta.textContent = String(error.message || error);
+        });
+      });
+
+      stopScreen.addEventListener("click", () => {
+        stopScreenLab();
+      });
+
+      startAudio.addEventListener("click", () => {
+        startAudioLab().catch((error) => {
+          audioChip.textContent = "마이크 접근 실패";
+          audioMeta.textContent = String(error.message || error);
+        });
+      });
+
+      stopAudio.addEventListener("click", () => {
+        stopAudioLab();
+      });
+
+      playFocusCue.addEventListener("click", async () => {
+        try {
+          await window.desktopMonitor.playCue("focus");
+          audioMeta.textContent = "포커스 사운드를 재생했습니다.";
+        } catch (error) {
+          audioMeta.textContent = String(error.message || error);
+        }
+      });
+
+      window.desktopMonitor.getPermissionStatus().then((result) => {
+        renderPermissions(result?.permissions || {});
+        permissionMeta.textContent = "권한 상태를 불러왔습니다.";
+      }).catch((error) => {
+        permissionMeta.textContent = String(error.message || error);
       });
     </script>
   </body>

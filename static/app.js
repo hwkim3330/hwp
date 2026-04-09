@@ -4,6 +4,12 @@ import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@rhwp/core@0.6.1/rhwp_bg.wasm";
 
 const elements = {
+  topTabWriter: document.querySelector("#top-tab-writer"),
+  topTabNotes: document.querySelector("#top-tab-notes"),
+  topTabSheet: document.querySelector("#top-tab-sheet"),
+  topTabSlides: document.querySelector("#top-tab-slides"),
+  topbarRoute: document.querySelector("#topbar-route"),
+  topbarStatus: document.querySelector("#topbar-status"),
   tabWriter: document.querySelector("#tab-writer"),
   tabNotes: document.querySelector("#tab-notes"),
   tabSheet: document.querySelector("#tab-sheet"),
@@ -122,6 +128,9 @@ function installMeasureTextWidth() {
 
 function setStatus(message, extra = "") {
   elements.statusBox.textContent = extra ? `${message}\n${extra}` : message;
+  if (elements.topbarStatus) {
+    elements.topbarStatus.textContent = extra || message;
+  }
   if (elements.liveActivityTitle) {
     elements.liveActivityTitle.textContent = message;
   }
@@ -158,11 +167,21 @@ function setMode(mode) {
   [elements.tabWriter, elements.tabNotes, elements.tabSheet, elements.tabSlides].forEach((tab) =>
     tab.classList.remove("active"),
   );
+  [elements.topTabWriter, elements.topTabNotes, elements.topTabSheet, elements.topTabSlides].forEach((tab) =>
+    tab?.classList.remove("active"),
+  );
   [elements.workspaceWriter, elements.workspaceNotes, elements.workspaceSheet, elements.workspaceSlides].forEach((panel) =>
     panel.classList.remove("active"),
   );
   map[mode][0].classList.add("active");
   map[mode][1].classList.add("active");
+  const topMap = {
+    writer: elements.topTabWriter,
+    notes: elements.topTabNotes,
+    sheet: elements.topTabSheet,
+    slides: elements.topTabSlides,
+  };
+  topMap[mode]?.classList.add("active");
   elements.modeHint.textContent = `현재 대상: ${mode[0].toUpperCase()}${mode.slice(1)}`;
   persistWorkspace();
 }
@@ -184,6 +203,9 @@ function setLiveRoute(route, detail = "") {
   }
   if (elements.commandRouteHint) {
     elements.commandRouteHint.textContent = routeLabel;
+  }
+  if (elements.topbarRoute) {
+    elements.topbarRoute.textContent = routeLabel;
   }
   if (elements.liveActivityShortcut) {
     elements.liveActivityShortcut.textContent =
@@ -2424,6 +2446,10 @@ elements.tabWriter.addEventListener("click", () => setMode("writer"));
 elements.tabNotes.addEventListener("click", () => setMode("notes"));
 elements.tabSheet.addEventListener("click", () => setMode("sheet"));
 elements.tabSlides.addEventListener("click", () => setMode("slides"));
+elements.topTabWriter?.addEventListener("click", () => setMode("writer"));
+elements.topTabNotes?.addEventListener("click", () => setMode("notes"));
+elements.topTabSheet?.addEventListener("click", () => setMode("sheet"));
+elements.topTabSlides?.addEventListener("click", () => setMode("slides"));
 
 elements.newDocument.addEventListener("click", async () => {
   createBlankDocument();

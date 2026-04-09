@@ -7,6 +7,27 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+    <header class="app-topbar">
+      <div class="app-topbar-section">
+        <div class="app-mark">hwp</div>
+        <div class="app-topbar-copy">
+          <strong>Workspace</strong>
+          <span>문서와 브라우저 작업을 하나의 흐름으로 처리</span>
+        </div>
+      </div>
+      <div class="app-topbar-section app-topbar-center">
+        <div class="topbar-mode-group">
+          <button id="top-tab-writer" class="topbar-mode active">Writer</button>
+          <button id="top-tab-notes" class="topbar-mode">Notes</button>
+          <button id="top-tab-sheet" class="topbar-mode">Sheet</button>
+          <button id="top-tab-slides" class="topbar-mode">Slides</button>
+        </div>
+      </div>
+      <div class="app-topbar-section app-topbar-right">
+        <span id="topbar-route" class="route-pill">Document</span>
+        <span id="topbar-status" class="topbar-status">준비 완료</span>
+      </div>
+    </header>
     <div class="shell">
       <aside class="panel panel-left">
         <div class="brand">

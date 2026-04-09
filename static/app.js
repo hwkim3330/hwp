@@ -46,6 +46,8 @@ const elements = {
   capLlmMeta: document.querySelector("#cap-llm-meta"),
   capHwpforge: document.querySelector("#cap-hwpforge"),
   capHwpforgeMeta: document.querySelector("#cap-hwpforge-meta"),
+  capComputerUse: document.querySelector("#cap-computer-use"),
+  capComputerUseMeta: document.querySelector("#cap-computer-use-meta"),
   toolRegistry: document.querySelector("#tool-registry"),
   permissionRegistry: document.querySelector("#permission-registry"),
   sessionMeta: document.querySelector("#session-meta"),
@@ -62,6 +64,11 @@ const elements = {
   openOnlyOffice: document.querySelector("#open-onlyoffice"),
   engineMeta: document.querySelector("#engine-meta"),
   onlyofficeSessions: document.querySelector("#onlyoffice-sessions"),
+  computerUseGoal: document.querySelector("#computer-use-goal"),
+  planComputerUse: document.querySelector("#plan-computer-use"),
+  computerUseMeta: document.querySelector("#computer-use-meta"),
+  computerUsePlan: document.querySelector("#computer-use-plan"),
+  computerUseSessions: document.querySelector("#computer-use-sessions"),
   searchQuery: document.querySelector("#search-query"),
   runSearch: document.querySelector("#run-search"),
   searchResults: document.querySelector("#search-results"),
@@ -83,6 +90,7 @@ const state = {
   sheetColumns: [...SHEET_COLUMNS],
   sheetRows: [],
   slides: [],
+  currentComputerUsePlan: null,
 };
 
 const STORAGE_KEY = "hwp-state-v1";
@@ -205,6 +213,95 @@ function renderOnlyOfficeSessions(items) {
   });
 }
 
+function formatComputerUseAction(action) {
+  if (!action || typeof action !== "object") {
+    return "";
+  }
+  if (action.type === "open_url") {
+    return action.url || "";
+  }
+  if (action.type === "search_query") {
+    return action.query || "";
+  }
+  if (action.type === "open_app") {
+    return action.app || "";
+  }
+  return action.text || "";
+}
+
+function renderComputerUsePlan(sessionId, plan) {
+  if (!elements.computerUsePlan) {
+    return;
+  }
+  if (!plan || !Array.isArray(plan.actions) || plan.actions.length === 0) {
+    elements.computerUsePlan.textContent = "아직 생성된 브라우저 계획이 없습니다.";
+    return;
+  }
+  elements.computerUsePlan.innerHTML = `
+    <div class="session-event">
+      <strong>${escapeHtml(plan.summary || "브라우저 작업 계획")}</strong>
+      <span>${escapeHtml(plan.reply || "")}</span>
+      <code>${escapeHtml(`세션 ${sessionId} · ${plan.meta?.planner || "-"}`)}</code>
+    </div>
+    ${plan.actions
+      .map(
+        (action, index) => `
+          <div class="search-result">
+            <strong>${index + 1}. ${escapeHtml(action.label || action.type || "step")}</strong>
+            <span>${escapeHtml(formatComputerUseAction(action))}</span>
+            <div class="button-row">
+              <button class="secondary computer-use-run" data-session-id="${escapeHtml(sessionId)}" data-step-index="${index}">실행</button>
+            </div>
+          </div>
+        `,
+      )
+      .join("")}
+  `;
+  elements.computerUsePlan.querySelectorAll(".computer-use-run").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await runComputerUseStep(button.dataset.sessionId || "", Number(button.dataset.stepIndex || "-1"));
+    });
+  });
+}
+
+function renderComputerUseSessions(items) {
+  if (!elements.computerUseSessions) {
+    return;
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    elements.computerUseSessions.textContent = "아직 브라우저 세션이 없습니다.";
+    return;
+  }
+  elements.computerUseSessions.innerHTML = items
+    .map(
+      (item) => `
+        <div class="session-event">
+          <strong>${escapeHtml(item.goal || item.id)}</strong>
+          <span>${escapeHtml(item.status || "planned")} · 실행 ${escapeHtml(String(item.executed_steps || 0))}회 · ${escapeHtml(formatSessionTime(item.created_at))}</span>
+          <code>${escapeHtml(item.summary || "")}</code>
+          <div class="session-link-row">
+            <button class="secondary computer-use-resume" data-session-id="${escapeHtml(item.id)}">계획 보기</button>
+            <button class="secondary computer-use-step" data-session-id="${escapeHtml(item.id)}" data-step-index="0">1단계 실행</button>
+          </div>
+        </div>
+      `,
+    )
+    .join("");
+  elements.computerUseSessions.querySelectorAll(".computer-use-resume").forEach((button) => {
+    button.addEventListener("click", () => {
+      const session = items.find((item) => item.id === (button.dataset.sessionId || ""));
+      if (session) {
+        renderComputerUsePlan(session.id, { summary: session.summary, reply: session.goal, actions: session.actions, meta: { planner: session.status } });
+      }
+    });
+  });
+  elements.computerUseSessions.querySelectorAll(".computer-use-step").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await runComputerUseStep(button.dataset.sessionId || "", Number(button.dataset.stepIndex || "-1"));
+    });
+  });
+}
+
 async function refreshAgentHealth() {
   try {
     const response = await fetch("/healthz", { cache: "no-store" });
@@ -221,16 +318,28 @@ async function refreshAgentHealth() {
       elements.capHwpforge.textContent = "offline";
       elements.capHwpforgeMeta.textContent = health.hwpforge?.detail || "hwpforge unavailable";
     }
+    if (elements.capComputerUse) {
+      elements.capComputerUse.textContent = `${health.computerUse?.sessions ?? 0} sessions`;
+    }
+    if (elements.capComputerUseMeta) {
+      elements.capComputerUseMeta.textContent = health.computerUse?.reference?.detail || "browser-use reference unavailable";
+    }
     setEngineMeta(`ONLYOFFICE Docs: ${health.onlyoffice?.docsUrl || "http://127.0.0.1:8080"} | active sessions ${health.onlyoffice?.sessions ?? 0}`);
     setRuntimeBadge(health.hwpforge?.available ? "Local Ops Ready" : "Partial Local Mode");
     if (elements.dashboardNow) {
-      elements.dashboardNow.textContent = `모델 ${health.model || "unknown"} · HWPX ${health.hwpforge?.available ? "ready" : "offline"} · OOXML 세션 ${health.onlyoffice?.sessions ?? 0}`;
+      elements.dashboardNow.textContent = `모델 ${health.model || "unknown"} · HWPX ${health.hwpforge?.available ? "ready" : "offline"} · OOXML ${health.onlyoffice?.sessions ?? 0} · Browser ${health.computerUse?.sessions ?? 0}`;
     }
   } catch (error) {
     elements.capLlm.textContent = "offline";
     elements.capLlmMeta.textContent = "health check failed";
     elements.capHwpforge.textContent = "unknown";
     elements.capHwpforgeMeta.textContent = String(error.message || error);
+    if (elements.capComputerUse) {
+      elements.capComputerUse.textContent = "unknown";
+    }
+    if (elements.capComputerUseMeta) {
+      elements.capComputerUseMeta.textContent = String(error.message || error);
+    }
     setEngineMeta(String(error.message || error));
     setRuntimeBadge("Offline");
   }
@@ -334,6 +443,9 @@ async function refreshRuntimeRegistry() {
       const runtimeSession = data.runtime?.session || {};
       elements.sessionMeta.textContent = `세션: ${runtimeSession.id || "-"} | 이벤트: ${runtimeSession.eventCount || 0}`;
     }
+    if (elements.computerUseMeta) {
+      elements.computerUseMeta.textContent = `browser-use reference: ${data.runtime?.computerUse?.reference?.detail || "-"} | sessions ${data.runtime?.computerUse?.sessions ?? 0}`;
+    }
   } catch (error) {
     if (elements.toolRegistry) {
       elements.toolRegistry.textContent = "도구 레지스트리 로드 실패";
@@ -373,6 +485,21 @@ async function refreshOnlyOfficeSessions() {
   } catch (error) {
     if (elements.onlyofficeSessions) {
       elements.onlyofficeSessions.textContent = String(error.message || error);
+    }
+  }
+}
+
+async function refreshComputerUseSessions() {
+  try {
+    const response = await fetch("/api/computer-use/sessions", { cache: "no-store" });
+    const data = await response.json();
+    if (!data.ok) {
+      throw new Error("computer use sessions unavailable");
+    }
+    renderComputerUseSessions(data.sessions || []);
+  } catch (error) {
+    if (elements.computerUseSessions) {
+      elements.computerUseSessions.textContent = String(error.message || error);
     }
   }
 }
@@ -456,6 +583,89 @@ async function runSystemAction(action, payload, successMessage = "시스템 액�
       elements.systemActionLog.textContent = String(error.message || error);
     }
     throw error;
+  }
+}
+
+async function planComputerUse(goal) {
+  const input = String(goal || elements.computerUseGoal?.value || elements.promptInput?.value || "").trim();
+  if (!input) {
+    if (elements.computerUseMeta) {
+      elements.computerUseMeta.textContent = "브라우저 목표를 입력해야 합니다.";
+    }
+    return;
+  }
+  if (elements.planComputerUse) {
+    elements.planComputerUse.disabled = true;
+  }
+  if (elements.computerUseMeta) {
+    elements.computerUseMeta.textContent = "브라우저 작업 계획 생성 중...";
+  }
+  try {
+    const response = await fetch("/api/computer-use/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ goal: input }),
+    });
+    const result = await response.json();
+    if (!result.ok) {
+      throw new Error(result.detail || result.error || "computer use plan failed");
+    }
+    state.currentComputerUsePlan = { sessionId: result.session_id, plan: result.plan };
+    renderComputerUsePlan(result.session_id, result.plan);
+    if (elements.computerUseGoal) {
+      elements.computerUseGoal.value = input;
+    }
+    if (elements.computerUseMeta) {
+      elements.computerUseMeta.textContent = `브라우저 계획 생성 완료 · ${result.plan.meta?.planner || "-"}`;
+    }
+    setWorkflowHint(`브라우저 작업 계획 생성: ${input}`);
+    await refreshComputerUseSessions();
+    await refreshSessionLog();
+    await refreshRuntimeRegistry();
+    await refreshAgentHealth();
+  } catch (error) {
+    if (elements.computerUseMeta) {
+      elements.computerUseMeta.textContent = String(error.message || error);
+    }
+    if (elements.computerUsePlan) {
+      elements.computerUsePlan.textContent = String(error.message || error);
+    }
+  } finally {
+    if (elements.planComputerUse) {
+      elements.planComputerUse.disabled = false;
+    }
+  }
+}
+
+async function runComputerUseStep(sessionId, stepIndex) {
+  if (!sessionId || stepIndex < 0) {
+    return;
+  }
+  if (elements.computerUseMeta) {
+    elements.computerUseMeta.textContent = `브라우저 단계 실행 중... 세션 ${sessionId} / 단계 ${stepIndex + 1}`;
+  }
+  try {
+    const response = await fetch("/api/computer-use/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, step_index: stepIndex }),
+    });
+    const result = await response.json();
+    if (!result.ok) {
+      throw new Error(result.detail || result.error || "computer use run failed");
+    }
+    const detail = result.result?.action?.label || result.result?.action?.type || "step";
+    if (elements.computerUseMeta) {
+      elements.computerUseMeta.textContent = `실행 완료: ${detail}`;
+    }
+    await refreshComputerUseSessions();
+    await refreshSessionLog();
+    await refreshRuntimeRegistry();
+    await refreshAgentHealth();
+  } catch (error) {
+    if (elements.computerUseMeta) {
+      elements.computerUseMeta.textContent = String(error.message || error);
+    }
   }
 }
 
@@ -1943,6 +2153,7 @@ async function boot() {
   await refreshRuntimeRegistry();
   await refreshSessionLog();
   await refreshOnlyOfficeSessions();
+  await refreshComputerUseSessions();
   setMode(state.mode || "writer");
   setStatus(
     "준비 완료",
@@ -2096,6 +2307,13 @@ elements.fileInput.addEventListener("change", async (event) => {
 });
 
 elements.runAgent.addEventListener("click", runAgent);
+elements.planComputerUse?.addEventListener("click", () => planComputerUse(elements.computerUseGoal?.value || elements.promptInput?.value));
+elements.computerUseGoal?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    planComputerUse(elements.computerUseGoal.value);
+  }
+});
 elements.runSearch?.addEventListener("click", () => runWebSearch(elements.searchQuery?.value || elements.promptInput.value));
 elements.searchQuery?.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {

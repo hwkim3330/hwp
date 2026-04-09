@@ -32,12 +32,15 @@ ENABLE_WEB_SEARCH = os.environ.get("ENABLE_WEB_SEARCH", "1") != "0"
 ENABLE_VISION_EXPERIMENTS = os.environ.get("ENABLE_VISION_EXPERIMENTS", "1") != "0"
 ENABLE_SYSTEM_ACTIONS = os.environ.get("ENABLE_SYSTEM_ACTIONS", "1") != "0"
 ENABLE_FILE_AUTOMATION = os.environ.get("ENABLE_FILE_AUTOMATION", "1") != "0"
+ENABLE_BROWSER_AUTOMATION = os.environ.get("ENABLE_BROWSER_AUTOMATION", "1") != "0"
 ONLYOFFICE_DOCS_URL = os.environ.get("ONLYOFFICE_DOCS_URL", "http://127.0.0.1:8080").rstrip("/")
 USER_AGENT = "hwp/1.0 (+https://github.com/hwkim3330/hwp)"
 SESSION_ID = f"session-{int(time.time())}"
 SESSION_EVENTS = []
 MAX_SESSION_EVENTS = 120
 ONLYOFFICE_SESSIONS = {}
+BROWSER_USE_REFERENCE_DIR = Path(os.environ.get("BROWSER_USE_REFERENCE_DIR", str(Path.home() / "office-agent-sources" / "browser-use"))).expanduser()
+BROWSER_USE_SESSIONS = {}
 
 
 SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
@@ -141,6 +144,35 @@ SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
 - slides는 title 문자열과 bullets 문자열 배열을 사용한다.
 """
 
+COMPUTER_USE_SYSTEM_PROMPT = """당신은 브라우저 중심 컴퓨터 유즈 플래너다.
+
+역할:
+- 사용자의 목표를 웹 탐색 단계로 나눈다.
+- 응답은 반드시 JSON 객체 하나만 반환한다.
+- 실제 실행 가능한 브라우저 단계만 제안한다.
+
+반환 스키마:
+{
+  "reply": "짧은 설명",
+  "summary": "무엇을 할지 한 줄 요약",
+  "actions": [
+    {"type": "open_url", "label": "사이트 열기", "url": "https://example.com"},
+    {"type": "search_query", "label": "검색 실행", "query": "검색어"},
+    {"type": "open_app", "label": "Safari 열기", "app": "Safari"},
+    {"type": "note", "label": "확인 포인트", "text": "로그인 여부를 확인한다"}
+  ]
+}
+
+제약:
+- JSON 외 텍스트 금지.
+- actions는 배열.
+- type은 open_url, search_query, open_app, note만 사용한다.
+- open_url은 http/https URL만 사용한다.
+- search_query는 실제 검색어 문자열을 넣는다.
+- open_app은 꼭 필요한 경우만 Safari 또는 Google Chrome만 사용한다.
+- 최대 6단계까지만 반환한다.
+"""
+
 
 def log_session_event(event_type, payload):
     SESSION_EVENTS.append(
@@ -175,6 +207,185 @@ def list_onlyoffice_sessions():
           }
       )
     return sorted(items, key=lambda item: item["created_at"], reverse=True)
+
+
+def browser_use_reference_status():
+    path = BROWSER_USE_REFERENCE_DIR
+    if not path.is_dir():
+        return {"available": False, "path": str(path), "detail": "browser-use reference not found"}
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(path), "log", "--oneline", "-1"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        detail = (result.stdout or result.stderr).strip() or "reference available"
+    except Exception as exc:
+        detail = str(exc)
+    return {"available": True, "path": str(path), "detail": detail}
+
+
+def list_browser_use_sessions():
+    items = []
+    for value in BROWSER_USE_SESSIONS.values():
+        items.append(
+            {
+                "id": value["id"],
+                "goal": value["goal"],
+                "status": value["status"],
+                "created_at": value["created_at"],
+                "executed_steps": len(value.get("history", [])),
+                "summary": value.get("plan", {}).get("summary", ""),
+                "actions": value.get("plan", {}).get("actions", []),
+            }
+        )
+    return sorted(items, key=lambda item: item["created_at"], reverse=True)
+
+
+def normalize_computer_use_actions(actions):
+    normalized = []
+    for action in actions or []:
+        if not isinstance(action, dict):
+            continue
+        action_type = str(action.get("type", "")).strip()
+        label = str(action.get("label", "")).strip() or action_type
+        if action_type == "open_url":
+            url = str(action.get("url", "")).strip()
+            if url.startswith(("http://", "https://")):
+                normalized.append({"type": action_type, "label": label[:120], "url": url[:800]})
+        elif action_type == "search_query":
+            query = re.sub(r"\s+", " ", str(action.get("query", "")).strip())
+            if query:
+                normalized.append({"type": action_type, "label": label[:120], "query": query[:240]})
+        elif action_type == "open_app":
+            app_name = str(action.get("app", "")).strip()
+            if app_name in {"Safari", "Google Chrome"}:
+                normalized.append({"type": action_type, "label": label[:120], "app": app_name})
+        elif action_type == "note":
+            text = re.sub(r"\s+", " ", str(action.get("text", "")).strip())
+            if text:
+                normalized.append({"type": action_type, "label": label[:120], "text": text[:400]})
+        if len(normalized) >= 6:
+            break
+    return normalized
+
+
+def validate_computer_use_plan(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("computer use plan must be an object")
+    reply = str(payload.get("reply", "")).strip() or "브라우저 작업 계획을 생성했습니다."
+    summary = str(payload.get("summary", "")).strip() or reply
+    actions = normalize_computer_use_actions(payload.get("actions", []))
+    if not actions:
+        raise ValueError("computer use plan requires actions")
+    return {"reply": reply[:400], "summary": summary[:300], "actions": actions}
+
+
+def build_computer_use_fallback_plan(goal, current_url="", search_results=None):
+    topic = re.sub(r"\s+", " ", goal).strip() or "작업 목표"
+    actions = []
+    if current_url.startswith(("http://", "https://")):
+        actions.append({"type": "open_url", "label": "현재 작업 페이지 열기", "url": current_url})
+    else:
+        actions.append({"type": "open_app", "label": "브라우저 준비", "app": "Safari"})
+    actions.append({"type": "search_query", "label": "목표 기반 검색", "query": topic})
+    if search_results:
+        first = search_results[0]
+        if first.get("url", "").startswith(("http://", "https://")):
+            actions.append({"type": "open_url", "label": "첫 참고 링크 열기", "url": first["url"]})
+            actions.append({"type": "note", "label": "확인 포인트", "text": f"{first.get('title', '참고 링크')}의 핵심 근거와 필요한 수치를 먼저 확인합니다."})
+    else:
+        actions.append({"type": "note", "label": "확인 포인트", "text": "검색 결과 상단 3개를 비교해 공식 문서나 원문 자료부터 확인합니다."})
+    actions.append({"type": "note", "label": "문서 반영", "text": "확인한 근거를 Writer 또는 연구노트에 구조화된 블록으로 옮깁니다."})
+    return {
+        "reply": "브라우저 중심 컴퓨터 유즈 계획을 생성했습니다.",
+        "summary": "브라우저를 열고 검색 결과를 검토한 뒤 문서로 옮기는 흐름",
+        "actions": normalize_computer_use_actions(actions),
+    }
+
+
+def call_computer_use_llm(goal, current_url="", search_results=None):
+    user_content = json.dumps(
+        {
+            "goal": goal,
+            "current_url": current_url,
+            "web_search": search_results or [],
+        },
+        ensure_ascii=False,
+    )
+    messages = [
+        {"role": "system", "content": COMPUTER_USE_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+    if is_ollama_base_url():
+        return validate_computer_use_plan(call_ollama_json(messages))
+
+    payload = {
+        "model": LLM_MODEL,
+        "messages": messages,
+        "temperature": 0.1,
+        "max_tokens": min(LLM_MAX_TOKENS, 500),
+        "response_format": {"type": "json_object"},
+    }
+    headers = {"Content-Type": "application/json"}
+    if LLM_API_KEY:
+        headers["Authorization"] = f"Bearer {LLM_API_KEY}"
+    req = request.Request(
+        f"{LLM_BASE_URL}/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    with request.urlopen(req, timeout=LLM_TIMEOUT_SECONDS) as response:
+        raw = response.read().decode("utf-8")
+    data = json.loads(raw)
+    content = data["choices"][0]["message"]["content"]
+    return validate_computer_use_plan(json.loads(extract_json_object(content)))
+
+
+def create_browser_use_session(goal, plan):
+    session_id = uuid.uuid4().hex
+    BROWSER_USE_SESSIONS[session_id] = {
+        "id": session_id,
+        "goal": goal,
+        "created_at": int(time.time()),
+        "status": "planned",
+        "plan": plan,
+        "history": [],
+    }
+    log_session_event("computer_use_plan", {"session_id": session_id, "goal": goal[:240], "steps": len(plan.get("actions", []))})
+    return session_id
+
+
+def run_computer_use_step(session_id, step_index):
+    if not ENABLE_BROWSER_AUTOMATION:
+        raise PermissionError("browser automation disabled")
+    session = BROWSER_USE_SESSIONS.get(session_id)
+    if not session:
+        raise KeyError("session not found")
+    actions = session.get("plan", {}).get("actions", [])
+    if not isinstance(step_index, int) or step_index < 0 or step_index >= len(actions):
+        raise IndexError("invalid step index")
+    action = actions[step_index]
+    action_type = action.get("type")
+    result = None
+    if action_type == "open_url":
+        result = run_system_action("open_url", {"url": action["url"]})
+    elif action_type == "search_query":
+        search_url = f"https://duckduckgo.com/?q={quote(action['query'])}"
+        result = run_system_action("open_url", {"url": search_url})
+    elif action_type == "open_app":
+        result = run_system_action("open_app", {"app": action["app"]})
+    elif action_type == "note":
+        result = {"type": "note", "text": action.get("text", "")}
+    else:
+        raise ValueError(f"unsupported action: {action_type}")
+    session["status"] = "running" if action_type != "note" else "review"
+    session.setdefault("history", []).append({"ts": int(time.time()), "step_index": step_index, "action": action, "result": result})
+    log_session_event("computer_use_step", {"session_id": session_id, "step_index": step_index, "type": action_type})
+    return {"session_id": session_id, "step_index": step_index, "action": action, "result": result}
 
 
 def onlyoffice_doc_type(extension):
@@ -1128,7 +1339,7 @@ def call_llm(user_prompt, document):
     return validate_plan(json.loads(extract_json_object(content))), search_results
 
 
-def call_ollama_llm(messages):
+def call_ollama_json(messages):
     payload = {
         "model": LLM_MODEL,
         "messages": messages,
@@ -1149,7 +1360,11 @@ def call_ollama_llm(messages):
         raw = response.read().decode("utf-8")
     data = json.loads(raw)
     content = data["message"]["content"]
-    return validate_plan(json.loads(extract_json_object(content)))
+    return json.loads(extract_json_object(content))
+
+
+def call_ollama_llm(messages):
+    return validate_plan(call_ollama_json(messages))
 
 
 def resolve_hwpforge_cmd():
@@ -1223,6 +1438,12 @@ def permission_registry():
             "status": "disabled" if not ENABLE_SYSTEM_ACTIONS else "experimental",
             "detail": "open_url / reveal_path / open_app 제한 액션 허용",
         },
+        {
+            "id": "browser.automation",
+            "label": "Browser Automation",
+            "status": "disabled" if not ENABLE_BROWSER_AUTOMATION else "experimental",
+            "detail": "브라우저 계획 생성 및 단계별 실행",
+        },
     ]
 
 
@@ -1278,6 +1499,13 @@ def tool_registry():
             "status": "ready",
             "detail": f"OOXML 편집 세션 브리지 via {ONLYOFFICE_DOCS_URL}",
         },
+        {
+            "id": "computer_use",
+            "label": "Computer Use",
+            "category": "automation",
+            "status": "disabled" if not ENABLE_BROWSER_AUTOMATION else "experimental",
+            "detail": browser_use_reference_status()["detail"],
+        },
     ]
 
 
@@ -1286,6 +1514,7 @@ def runtime_registry():
         "session": {"id": SESSION_ID, "eventCount": len(SESSION_EVENTS)},
         "llm": {"model": LLM_MODEL, "baseUrl": LLM_BASE_URL, "ollama": is_ollama_base_url()},
         "onlyoffice": {"docsUrl": ONLYOFFICE_DOCS_URL, "sessions": len(ONLYOFFICE_SESSIONS)},
+        "computerUse": {"sessions": len(BROWSER_USE_SESSIONS), "reference": browser_use_reference_status()},
         "permissions": permission_registry(),
         "tools": tool_registry(),
     }
@@ -1332,6 +1561,7 @@ class Handler(SimpleHTTPRequestHandler):
                     "planner": "llm+fallback",
                     "hwpforge": hwpforge_status(),
                     "onlyoffice": {"docsUrl": ONLYOFFICE_DOCS_URL, "sessions": len(ONLYOFFICE_SESSIONS)},
+                    "computerUse": {"sessions": len(BROWSER_USE_SESSIONS), "reference": browser_use_reference_status()},
                 }
             )
             return
@@ -1340,6 +1570,9 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/session":
             self._send_json({"ok": True, "session": session_snapshot()})
+            return
+        if self.path == "/api/computer-use/sessions":
+            self._send_json({"ok": True, "sessions": list_browser_use_sessions()})
             return
         if self.path == "/api/onlyoffice/sessions":
             self._send_json({"ok": True, "sessions": list_onlyoffice_sessions()})
@@ -1436,6 +1669,44 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": True, "result": result})
             except Exception as exc:
                 self._send_json({"ok": False, "error": "system_action_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/computer-use/plan":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(body or "{}")
+                goal = re.sub(r"\s+", " ", str(payload.get("goal", "")).strip())
+                current_url = str(payload.get("current_url", "")).strip()
+                if not goal:
+                    raise ValueError("goal is required")
+                search_results = []
+                if should_use_web_search(goal):
+                    try:
+                        search_results = web_search(goal, max_results=3)
+                    except Exception:
+                        search_results = []
+                try:
+                    plan = call_computer_use_llm(goal, current_url=current_url, search_results=search_results)
+                    meta = {"planner": "llm"}
+                except (error.HTTPError, error.URLError, TimeoutError, ValueError, KeyError, json.JSONDecodeError) as exc:
+                    plan = build_computer_use_fallback_plan(goal, current_url=current_url, search_results=search_results)
+                    meta = {"planner": "fallback", "reason": str(exc)}
+                session_id = create_browser_use_session(goal, plan)
+                self._send_json({"ok": True, "session_id": session_id, "plan": {**plan, "meta": meta}})
+            except Exception as exc:
+                self._send_json({"ok": False, "error": "computer_use_plan_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/computer-use/run":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(body or "{}")
+                session_id = str(payload.get("session_id", "")).strip()
+                step_index = int(payload.get("step_index", -1))
+                result = run_computer_use_step(session_id, step_index)
+                self._send_json({"ok": True, "result": result})
+            except Exception as exc:
+                self._send_json({"ok": False, "error": "computer_use_run_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         if self.path == "/api/hwpforge/status":
             self._send_json({"ok": True, "hwpforge": hwpforge_status()})

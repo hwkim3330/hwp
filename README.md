@@ -20,6 +20,7 @@
 - `Writer / Notes / Sheet / Slides` 워크스테이션
 - 현재 탭 기준 모드별 에이전트 생성
 - 브라우저 로컬 저장 복원
+- `browser-use` 참조 기반 `Computer Use` 브라우저 계획/세션/단계 실행
 
 ## 실행
 
@@ -86,11 +87,13 @@ export LLM_API_KEY=""
 - `static/styles.css`: 레이아웃/스타일
 - `electron/main.js`: Electron 데스크톱 셸 + 메뉴바 모니터
 - `electron/monitor.html`: 시스템 모니터 팝오버 UI
+- `office-agent-sources/browser-use`: 브라우저 자동화 참조 저장소
 
 ## 구현 메모
 
 - 문서 렌더링/편집은 CDN의 `@rhwp/core`를 직접 사용합니다.
 - 에이전트는 문서 스냅샷을 바탕으로 JSON 작업 계획을 반환합니다.
+- Computer Use는 `browser-use`의 세션/행동 분리 아이디어를 참고해 브라우저 계획과 단계 실행을 나눕니다.
 - 지원 작업:
   - `set_document_html`
   - `append_html`

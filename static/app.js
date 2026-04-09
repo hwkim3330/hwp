@@ -26,10 +26,14 @@ const elements = {
   newNote: document.querySelector("#new-note"),
   exportNote: document.querySelector("#export-note"),
   notesPad: document.querySelector("#notes-pad"),
+  addSheetRow: document.querySelector("#add-sheet-row"),
+  addSheetColumn: document.querySelector("#add-sheet-column"),
+  addSheetTotals: document.querySelector("#add-sheet-totals"),
   resetSheet: document.querySelector("#reset-sheet"),
   exportSheet: document.querySelector("#export-sheet"),
   exportXlsx: document.querySelector("#export-xlsx"),
   sheetGrid: document.querySelector("#sheet-grid"),
+  addSlide: document.querySelector("#add-slide"),
   generateSlides: document.querySelector("#generate-slides"),
   exportSlides: document.querySelector("#export-slides"),
   exportPptx: document.querySelector("#export-pptx"),
@@ -1984,6 +1988,48 @@ function resetSheetData() {
   persistWorkspace();
 }
 
+function createEmptySheetRow() {
+  return state.sheetColumns.reduce((acc, column) => {
+    acc[column] = "";
+    return acc;
+  }, {});
+}
+
+function addSheetRow() {
+  state.sheetRows.push(createEmptySheetRow());
+  renderSheet();
+  persistWorkspace();
+}
+
+function nextSheetColumnName() {
+  return `열${state.sheetColumns.length + 1}`;
+}
+
+function addSheetColumn(name = nextSheetColumnName()) {
+  const columnName = String(name || nextSheetColumnName()).trim() || nextSheetColumnName();
+  state.sheetColumns.push(columnName);
+  state.sheetRows = state.sheetRows.map((row) => ({ ...row, [columnName]: "" }));
+  renderSheet();
+  persistWorkspace();
+}
+
+function addSheetTotalsRow() {
+  const totals = state.sheetColumns.reduce((acc, column, index) => {
+    if (index === 0) {
+      acc[column] = "합계";
+      return acc;
+    }
+    const numbers = state.sheetRows
+      .map((row) => Number(String(row[column] || "").replace(/,/g, "")))
+      .filter((value) => Number.isFinite(value) && value !== 0);
+    acc[column] = numbers.length > 0 ? String(numbers.reduce((sum, value) => sum + value, 0)) : "";
+    return acc;
+  }, {});
+  state.sheetRows.push(totals);
+  renderSheet();
+  persistWorkspace();
+}
+
 function renderSheet() {
   const table = document.createElement("table");
   table.className = "sheet-table";
@@ -2046,6 +2092,12 @@ function generateSlidesFromPrompt(prompt) {
   persistWorkspace();
 }
 
+function addSlideCard() {
+  state.slides.push({ title: `슬라이드 ${state.slides.length + 1}`, bullets: ["핵심 내용을 입력하세요."] });
+  renderSlides();
+  persistWorkspace();
+}
+
 function renderSlides() {
   elements.slidesDeck.innerHTML = "";
   if (state.slides.length === 0) {
@@ -2056,13 +2108,34 @@ function renderSlides() {
     const card = document.createElement("article");
     card.className = "slide-card";
     const title = document.createElement("h4");
-    title.textContent = `${index + 1}. ${slide.title}`;
-    card.append(title);
-    slide.bullets.forEach((bullet) => {
-      const p = document.createElement("p");
-      p.textContent = `• ${bullet}`;
-      card.append(p);
+    title.contentEditable = "true";
+    title.textContent = slide.title || `슬라이드 ${index + 1}`;
+    title.addEventListener("input", () => {
+      state.slides[index].title = title.textContent?.trim() || `슬라이드 ${index + 1}`;
+      persistWorkspace();
     });
+    card.append(title);
+    const bulletsBox = document.createElement("div");
+    bulletsBox.className = "slide-bullets";
+    (slide.bullets || []).forEach((bullet, bulletIndex) => {
+      const p = document.createElement("p");
+      p.contentEditable = "true";
+      p.textContent = bullet;
+      p.addEventListener("input", () => {
+        state.slides[index].bullets[bulletIndex] = p.textContent?.trim() || "";
+        persistWorkspace();
+      });
+      bulletsBox.append(p);
+    });
+    const addBulletButton = document.createElement("button");
+    addBulletButton.className = "secondary";
+    addBulletButton.textContent = "불릿 추가";
+    addBulletButton.addEventListener("click", () => {
+      state.slides[index].bullets.push("새 불릿");
+      renderSlides();
+      persistWorkspace();
+    });
+    card.append(bulletsBox, addBulletButton);
     elements.slidesDeck.append(card);
   });
 }
@@ -2612,6 +2685,21 @@ elements.exportNote.addEventListener("click", () => {
   setStatus("메모를 TXT로 저장했습니다.");
 });
 
+elements.addSheetRow?.addEventListener("click", () => {
+  addSheetRow();
+  setStatus("시트 행을 추가했습니다.");
+});
+
+elements.addSheetColumn?.addEventListener("click", () => {
+  addSheetColumn();
+  setStatus("시트 열을 추가했습니다.");
+});
+
+elements.addSheetTotals?.addEventListener("click", () => {
+  addSheetTotalsRow();
+  setStatus("합계 행을 추가했습니다.");
+});
+
 elements.resetSheet.addEventListener("click", () => {
   resetSheetData();
   renderSheet();
@@ -2634,6 +2722,12 @@ elements.generateSlides.addEventListener("click", () => {
   generateSlidesFromPrompt(elements.promptInput.value);
   setMode("slides");
   setStatus("현재 요청을 기준으로 슬라이드 초안을 생성했습니다.");
+});
+
+elements.addSlide?.addEventListener("click", () => {
+  addSlideCard();
+  setMode("slides");
+  setStatus("슬라이드를 추가했습니다.");
 });
 
 elements.exportSlides.addEventListener("click", () => {

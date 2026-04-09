@@ -968,6 +968,24 @@ textarea {
   color: var(--muted);
 }
 
+.slide-card h4[contenteditable="true"],
+.slide-card p[contenteditable="true"] {
+  outline: none;
+  border-radius: 8px;
+  padding: 2px 4px;
+}
+
+.slide-card h4[contenteditable="true"]:focus,
+.slide-card p[contenteditable="true"]:focus {
+  background: rgba(10, 132, 255, 0.08);
+}
+
+.slide-bullets {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
 .error {
   color: var(--danger);
 }

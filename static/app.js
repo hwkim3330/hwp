@@ -35,6 +35,7 @@ const elements = {
   slidesDeck: document.querySelector("#slides-deck"),
   docMeta: document.querySelector("#doc-meta"),
   outlineBox: document.querySelector("#outline-box"),
+  recentCommands: document.querySelector("#recent-commands"),
   statusBox: document.querySelector("#status-box"),
   renderBadge: document.querySelector("#render-badge"),
   liveActivityTitle: document.querySelector("#live-activity-title"),
@@ -107,9 +108,12 @@ const state = {
   currentComputerUseSessionId: "",
   computerUseBusy: false,
   liveRoute: "auto",
+  commandHistory: [],
+  autosavedAt: 0,
 };
 
 const STORAGE_KEY = "hwp-state-v1";
+const MAX_COMMAND_HISTORY = 12;
 
 function installMeasureTextWidth() {
   let ctx = null;
@@ -137,6 +141,13 @@ function setStatus(message, extra = "") {
   if (elements.liveActivityDetail) {
     elements.liveActivityDetail.textContent = extra || message;
   }
+}
+
+function formatTimestamp(ts) {
+  if (!ts) {
+    return "-";
+  }
+  return new Date(ts).toLocaleTimeString("ko-KR", { hour12: false });
 }
 
 function setBadge(message) {
@@ -297,6 +308,63 @@ function setComputerUsePresetGoal(goal) {
   }
   previewAgentRoute();
   setLiveRoute("computer_use", goal);
+}
+
+function renderCommandHistory() {
+  if (!elements.recentCommands) {
+    return;
+  }
+  if (!Array.isArray(state.commandHistory) || state.commandHistory.length === 0) {
+    elements.recentCommands.textContent = "아직 최근 작업이 없습니다.";
+    return;
+  }
+  elements.recentCommands.innerHTML = state.commandHistory
+    .slice(0, 6)
+    .map(
+      (item, index) => `
+        <div class="session-event">
+          <strong>${escapeHtml(item.route === "computer_use" ? "브라우저 작업" : "문서 작업")}</strong>
+          <span>${escapeHtml(formatTimestamp(item.ts))}</span>
+          <code>${escapeHtml(item.prompt || "")}</code>
+          <div class="session-link-row">
+            <button class="secondary recent-command-run" data-index="${index}">다시 실행</button>
+          </div>
+        </div>
+      `,
+    )
+    .join("");
+  elements.recentCommands.querySelectorAll(".recent-command-run").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const item = state.commandHistory[Number(button.dataset.index || "-1")];
+      if (!item) {
+        return;
+      }
+      if (elements.promptInput) {
+        elements.promptInput.value = item.prompt || "";
+      }
+      previewAgentRoute();
+      await runAgent();
+    });
+  });
+}
+
+function rememberCommand(prompt, route) {
+  const text = String(prompt || "").trim();
+  if (!text) {
+    return;
+  }
+  state.commandHistory = [
+    { prompt: text, route, ts: Date.now() },
+    ...state.commandHistory.filter((item) => item.prompt !== text),
+  ].slice(0, MAX_COMMAND_HISTORY);
+  renderCommandHistory();
+}
+
+function getWriterSnapshot() {
+  const summary = getDocumentSummary();
+  return {
+    paragraphs: summary.paragraphs.map((item) => item.text).filter(Boolean),
+  };
 }
 
 function formatComputerUseAction(action) {
@@ -784,6 +852,8 @@ async function planComputerUse(goal, options = {}) {
     if (elements.computerUseMeta) {
       elements.computerUseMeta.textContent = `브라우저 계획 생성 완료 · ${result.plan.meta?.planner || "-"} · ${result.plan.actions.length}단계`;
     }
+    rememberCommand(input, "computer_use");
+    persistWorkspace();
     setStatus("브라우저 계획 생성 완료", `${result.plan.actions.length}단계 · ${result.plan.summary || input}`);
     setWorkflowHint(`브라우저 작업 계획 생성: ${input}`);
     await refreshComputerUseSessions();
@@ -1983,18 +2053,24 @@ function createWorkspaceSnapshot() {
   return {
     mode: state.mode,
     fileName: state.fileName,
+    writer: getWriterSnapshot(),
     noteText: elements.notesPad.value,
     sheet: {
       columns: state.sheetColumns,
       rows: state.sheetRows,
     },
     slides: state.slides,
+    commandHistory: state.commandHistory,
   };
 }
 
 function persistWorkspace() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(createWorkspaceSnapshot()));
+    state.autosavedAt = Date.now();
+    if (elements.topbarStatus) {
+      elements.topbarStatus.textContent = `자동 저장 ${formatTimestamp(state.autosavedAt)}`;
+    }
   } catch {}
 }
 
@@ -2009,6 +2085,9 @@ function restoreWorkspace() {
       state.noteText = saved.noteText;
       elements.notesPad.value = saved.noteText;
     }
+    if (Array.isArray(saved.writer?.paragraphs) && saved.writer.paragraphs.length > 0) {
+      replaceWriterWithText(saved.writer.paragraphs.join("\n\n"));
+    }
     if (saved.sheet?.rows && Array.isArray(saved.sheet.rows)) {
       if (Array.isArray(saved.sheet.columns) && saved.sheet.columns.length > 0) {
         state.sheetColumns = saved.sheet.columns.map((column) => String(column));
@@ -2020,6 +2099,9 @@ function restoreWorkspace() {
     }
     if (typeof saved.mode === "string") {
       state.mode = saved.mode;
+    }
+    if (Array.isArray(saved.commandHistory)) {
+      state.commandHistory = saved.commandHistory;
     }
   } catch {}
 }
@@ -2293,6 +2375,7 @@ async function runAgent() {
     elements.reply.innerHTML = `<p>${escapeHtml("브라우저 작업으로 분기해 자동 진행을 시작했습니다.")}</p>`;
     return;
   }
+  rememberCommand(prompt, "document");
   if (parsed.effects.search) {
     await runWebSearch(prompt);
   }
@@ -2378,6 +2461,7 @@ async function boot() {
   state.ready = true;
   createBlankDocument();
   restoreWorkspace();
+  renderCommandHistory();
   if (state.sheetRows.length === 0) {
     resetSheetData();
   }

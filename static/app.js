@@ -14,6 +14,9 @@ const elements = {
   tabNotes: document.querySelector("#tab-notes"),
   tabSheet: document.querySelector("#tab-sheet"),
   tabSlides: document.querySelector("#tab-slides"),
+  insertHeading: document.querySelector("#insert-heading"),
+  insertParagraph: document.querySelector("#insert-paragraph"),
+  insertTable: document.querySelector("#insert-table"),
   workspaceWriter: document.querySelector("#workspace-writer"),
   workspaceNotes: document.querySelector("#workspace-notes"),
   workspaceSheet: document.querySelector("#workspace-sheet"),
@@ -1193,6 +1196,26 @@ function appendWriterText(text) {
       paraIndex = appendParagraphAfter(paraIndex);
     }
   });
+}
+
+function insertWriterTemplate(kind) {
+  if (!state.doc) {
+    createBlankDocument();
+  }
+  if (kind === "heading") {
+    appendWriterText("제목");
+    persistWorkspace();
+    return;
+  }
+  if (kind === "paragraph") {
+    appendWriterText("새 문단 내용을 입력하세요.");
+    persistWorkspace();
+    return;
+  }
+  if (kind === "table") {
+    appendWriterText("항목 | 내용 | 비고\n1 | 내용 입력 | -\n2 | 내용 입력 | -");
+    persistWorkspace();
+  }
 }
 
 function replaceParagraphWithText(section, paragraph, text) {
@@ -2665,6 +2688,27 @@ elements.newDocument.addEventListener("click", async () => {
 elements.exportWorkspace?.addEventListener("click", () => {
   exportWorkspacePackage();
   setStatus("작업 패키지를 저장했습니다.", toWorkspaceFileName(state.fileName));
+});
+
+elements.insertHeading?.addEventListener("click", async () => {
+  insertWriterTemplate("heading");
+  await refreshDocumentView();
+  setMode("writer");
+  setStatus("제목 블록을 추가했습니다.");
+});
+
+elements.insertParagraph?.addEventListener("click", async () => {
+  insertWriterTemplate("paragraph");
+  await refreshDocumentView();
+  setMode("writer");
+  setStatus("문단 블록을 추가했습니다.");
+});
+
+elements.insertTable?.addEventListener("click", async () => {
+  insertWriterTemplate("table");
+  await refreshDocumentView();
+  setMode("writer");
+  setStatus("표 템플릿을 추가했습니다.");
 });
 
 elements.newNote.addEventListener("click", () => {

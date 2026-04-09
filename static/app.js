@@ -31,6 +31,11 @@ const elements = {
   outlineBox: document.querySelector("#outline-box"),
   statusBox: document.querySelector("#status-box"),
   renderBadge: document.querySelector("#render-badge"),
+  liveActivityTitle: document.querySelector("#live-activity-title"),
+  liveActivityRoute: document.querySelector("#live-activity-route"),
+  liveActivityDetail: document.querySelector("#live-activity-detail"),
+  liveActivityShortcut: document.querySelector("#live-activity-shortcut"),
+  liveActivityProgress: document.querySelector("#live-activity-progress"),
   agentRuntime: document.querySelector("#agent-runtime"),
   dashboardNow: document.querySelector("#dashboard-now"),
   dashboardCapture: document.querySelector("#dashboard-capture"),
@@ -98,6 +103,7 @@ const state = {
   currentComputerUsePlan: null,
   currentComputerUseSessionId: "",
   computerUseBusy: false,
+  liveRoute: "auto",
 };
 
 const STORAGE_KEY = "hwp-state-v1";
@@ -119,10 +125,19 @@ function installMeasureTextWidth() {
 
 function setStatus(message, extra = "") {
   elements.statusBox.textContent = extra ? `${message}\n${extra}` : message;
+  if (elements.liveActivityTitle) {
+    elements.liveActivityTitle.textContent = message;
+  }
+  if (elements.liveActivityDetail) {
+    elements.liveActivityDetail.textContent = extra || message;
+  }
 }
 
 function setBadge(message) {
   elements.renderBadge.textContent = message;
+  if (elements.liveActivityProgress) {
+    elements.liveActivityProgress.textContent = message;
+  }
 }
 
 function setRuntimeBadge(message) {
@@ -161,6 +176,22 @@ function setWorkflowHint(message) {
   }
   if (elements.dashboardCapture) {
     elements.dashboardCapture.textContent = message;
+  }
+}
+
+function setLiveRoute(route, detail = "") {
+  state.liveRoute = route;
+  if (elements.liveActivityRoute) {
+    elements.liveActivityRoute.textContent = route === "computer_use" ? "Browser" : route === "document" ? "Document" : "Auto";
+  }
+  if (elements.liveActivityShortcut) {
+    elements.liveActivityShortcut.textContent =
+      route === "computer_use"
+        ? "명령 제출 시 브라우저 계획과 자동 진행을 실행합니다."
+        : "Cmd/Ctrl + Enter로 바로 실행";
+  }
+  if (detail && elements.liveActivityDetail) {
+    elements.liveActivityDetail.textContent = detail;
   }
 }
 
@@ -227,6 +258,7 @@ function setComputerUsePresetGoal(goal) {
   if (elements.computerUseMeta) {
     elements.computerUseMeta.textContent = `브라우저 목표 준비: ${goal}`;
   }
+  setLiveRoute("computer_use", goal);
 }
 
 function formatComputerUseAction(action) {
@@ -578,6 +610,47 @@ function buildGuiPrompt(rawPrompt) {
   return { prompt: finalPrompt.trim(), effects };
 }
 
+function detectAgentRoute(prompt) {
+  const text = String(prompt || "").trim().toLowerCase();
+  if (!text) {
+    return "document";
+  }
+  const browserKeywords = [
+    "브라우저",
+    "사이트",
+    "링크",
+    "검색",
+    "찾아줘",
+    "열어줘",
+    "공식 문서",
+    "릴리스",
+    "release",
+    "latest",
+    "open",
+    "find",
+    "docs",
+    "documentation",
+  ];
+  const documentKeywords = [
+    "작성",
+    "초안",
+    "정리",
+    "회의록",
+    "보고서",
+    "연구노트",
+    "문서",
+    "표로",
+    "슬라이드",
+    "다듬어",
+  ];
+  const browserScore = browserKeywords.filter((keyword) => text.includes(keyword)).length;
+  const documentScore = documentKeywords.filter((keyword) => text.includes(keyword)).length;
+  if (browserScore > 0 && browserScore >= documentScore) {
+    return "computer_use";
+  }
+  return "document";
+}
+
 async function runWebSearch(query) {
   const input = String(query || "").trim();
   if (!input) {
@@ -645,7 +718,7 @@ async function runSystemAction(action, payload, successMessage = "시스템 액�
   }
 }
 
-async function planComputerUse(goal) {
+async function planComputerUse(goal, options = {}) {
   const input = String(goal || elements.computerUseGoal?.value || elements.promptInput?.value || "").trim();
   if (!input) {
     if (elements.computerUseMeta) {
@@ -656,9 +729,11 @@ async function planComputerUse(goal) {
   if (elements.planComputerUse) {
     elements.planComputerUse.disabled = true;
   }
+  setLiveRoute("computer_use", input);
   if (elements.computerUseMeta) {
     elements.computerUseMeta.textContent = "브라우저 작업 계획 생성 중...";
   }
+  setBadge("브라우저 계획");
   try {
     const response = await fetch("/api/computer-use/plan", {
       method: "POST",
@@ -686,11 +761,15 @@ async function planComputerUse(goal) {
     if (elements.computerUseMeta) {
       elements.computerUseMeta.textContent = `브라우저 계획 생성 완료 · ${result.plan.meta?.planner || "-"} · ${result.plan.actions.length}단계`;
     }
+    setStatus("브라우저 계획 생성 완료", `${result.plan.actions.length}단계 · ${result.plan.summary || input}`);
     setWorkflowHint(`브라우저 작업 계획 생성: ${input}`);
     await refreshComputerUseSessions();
     await refreshSessionLog();
     await refreshRuntimeRegistry();
     await refreshAgentHealth();
+    if (options.autorun) {
+      await runAllComputerUseSteps();
+    }
   } catch (error) {
     if (elements.computerUseMeta) {
       elements.computerUseMeta.textContent = String(error.message || error);
@@ -719,10 +798,13 @@ async function runComputerUseStep(sessionId, stepIndex) {
     return;
   }
   state.computerUseBusy = true;
+  setLiveRoute("computer_use");
   setComputerUseProgress(state.currentComputerUsePlan);
   if (elements.computerUseMeta) {
     elements.computerUseMeta.textContent = `브라우저 단계 실행 중... 세션 ${sessionId} / 단계 ${stepIndex + 1}`;
   }
+  setBadge(`브라우저 ${stepIndex + 1}단계`);
+  setStatus("브라우저 단계 실행 중", `세션 ${sessionId} · 단계 ${stepIndex + 1}`);
   try {
     const response = await fetch("/api/computer-use/run", {
       method: "POST",
@@ -742,6 +824,8 @@ async function runComputerUseStep(sessionId, stepIndex) {
     if (elements.computerUseMeta) {
       elements.computerUseMeta.textContent = `실행 완료: ${detail}`;
     }
+    setStatus("브라우저 단계 실행 완료", detail);
+    setBadge("브라우저 진행");
     await refreshComputerUseSessions();
     await refreshSessionLog();
     await refreshRuntimeRegistry();
@@ -750,6 +834,8 @@ async function runComputerUseStep(sessionId, stepIndex) {
     if (elements.computerUseMeta) {
       elements.computerUseMeta.textContent = String(error.message || error);
     }
+    setStatus("브라우저 단계 실행 실패", String(error.message || error));
+    setBadge("실패");
   } finally {
     state.computerUseBusy = false;
     setComputerUseProgress(state.currentComputerUsePlan);
@@ -772,6 +858,8 @@ async function runAllComputerUseSteps() {
   if (state.computerUseBusy) {
     return;
   }
+  setLiveRoute("computer_use");
+  setBadge("자동 진행");
   while (true) {
     const sessionId = state.currentComputerUseSessionId;
     const stepIndex = getNextComputerUseStepIndex();
@@ -784,6 +872,8 @@ async function runAllComputerUseSteps() {
   if (elements.computerUseMeta) {
     elements.computerUseMeta.textContent = "자동 진행 완료";
   }
+  setStatus("브라우저 자동 진행 완료");
+  setBadge("완료");
 }
 
 function parseJson(value) {
@@ -2176,6 +2266,16 @@ async function runAgent() {
     elements.reply.innerHTML = "<p class='error'>요청 문장을 입력해야 합니다.</p>";
     return;
   }
+  const route = detectAgentRoute(prompt);
+  setLiveRoute(route, prompt);
+  if (route === "computer_use") {
+    if (elements.computerUseGoal && !elements.computerUseGoal.value.trim()) {
+      elements.computerUseGoal.value = prompt;
+    }
+    await planComputerUse(prompt, { autorun: true });
+    elements.reply.innerHTML = `<p>${escapeHtml("브라우저 작업으로 분기해 자동 진행을 시작했습니다.")}</p>`;
+    return;
+  }
   if (parsed.effects.search) {
     await runWebSearch(elements.searchQuery?.value || prompt);
   }
@@ -2185,6 +2285,7 @@ async function runAgent() {
   }
 
   setBadge("계획 생성 중");
+  setLiveRoute("document", prompt);
   setStatus("에이전트가 문서 스냅샷을 읽고 작업 계획을 생성하는 중입니다.");
   elements.runAgent.disabled = true;
 
@@ -2431,6 +2532,12 @@ elements.computerUseGoal?.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
     planComputerUse(elements.computerUseGoal.value);
+  }
+});
+elements.promptInput?.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    event.preventDefault();
+    runAgent();
   }
 });
 elements.runSearch?.addEventListener("click", () => runWebSearch(elements.searchQuery?.value || elements.promptInput.value));

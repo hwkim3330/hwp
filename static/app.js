@@ -19,6 +19,7 @@ const elements = {
   workspaceSheet: document.querySelector("#workspace-sheet"),
   workspaceSlides: document.querySelector("#workspace-slides"),
   newDocument: document.querySelector("#new-document"),
+  exportWorkspace: document.querySelector("#export-workspace"),
   exportDocument: document.querySelector("#export-document"),
   exportDocx: document.querySelector("#export-docx"),
   fileInput: document.querySelector("#file-input"),
@@ -1850,6 +1851,18 @@ async function loadDocumentFromFile(file) {
     const text = await file.text();
     try {
       const parsed = JSON.parse(text);
+      if (isWorkspaceSnapshot(parsed)) {
+        createBlankDocument();
+        applyWorkspaceSnapshot(parsed);
+        renderSheet();
+        renderSlides();
+        renderCommandHistory();
+        previewAgentRoute();
+        setMode(state.mode || "writer");
+        persistWorkspace();
+        setStatus("작업 패키지를 복원했습니다.", file.name);
+        return;
+      }
       if (Array.isArray(parsed.slides)) {
         state.slides = parsed.slides;
         renderSlides();
@@ -1902,6 +1915,11 @@ function downloadBytes(bytes, fileName) {
   link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function exportWorkspacePackage() {
+  const snapshot = createWorkspaceSnapshot();
+  downloadText(JSON.stringify(snapshot, null, 2), toWorkspaceFileName(state.fileName), "application/json;charset=utf-8");
 }
 
 function bytesToBase64(bytes) {
@@ -2051,9 +2069,12 @@ function renderSlides() {
 
 function createWorkspaceSnapshot() {
   return {
+    version: 1,
     mode: state.mode,
     fileName: state.fileName,
     writer: getWriterSnapshot(),
+    promptInput: elements.promptInput?.value || "",
+    liveRoute: state.liveRoute,
     noteText: elements.notesPad.value,
     sheet: {
       columns: state.sheetColumns,
@@ -2062,6 +2083,53 @@ function createWorkspaceSnapshot() {
     slides: state.slides,
     commandHistory: state.commandHistory,
   };
+}
+
+function toWorkspaceFileName(fileName) {
+  const base = String(fileName || "hwp-workspace").replace(/\.(hwp|hwpx|docx|xlsx|pptx|txt|md|csv|json)$/i, "");
+  return `${base || "hwp-workspace"}.hwp-workspace.json`;
+}
+
+function isWorkspaceSnapshot(value) {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      (Array.isArray(value.writer?.paragraphs) || typeof value.noteText === "string" || Array.isArray(value.commandHistory)),
+  );
+}
+
+function applyWorkspaceSnapshot(saved) {
+  if (typeof saved.fileName === "string" && saved.fileName.trim()) {
+    state.fileName = saved.fileName;
+  }
+  if (typeof saved.noteText === "string") {
+    state.noteText = saved.noteText;
+    elements.notesPad.value = saved.noteText;
+  }
+  if (Array.isArray(saved.writer?.paragraphs) && saved.writer.paragraphs.length > 0) {
+    replaceWriterWithText(saved.writer.paragraphs.join("\n\n"));
+  }
+  if (saved.sheet?.rows && Array.isArray(saved.sheet.rows)) {
+    if (Array.isArray(saved.sheet.columns) && saved.sheet.columns.length > 0) {
+      state.sheetColumns = saved.sheet.columns.map((column) => String(column));
+    }
+    state.sheetRows = saved.sheet.rows;
+  }
+  if (Array.isArray(saved.slides)) {
+    state.slides = saved.slides;
+  }
+  if (typeof saved.mode === "string") {
+    state.mode = saved.mode;
+  }
+  if (Array.isArray(saved.commandHistory)) {
+    state.commandHistory = saved.commandHistory;
+  }
+  if (typeof saved.promptInput === "string" && elements.promptInput) {
+    elements.promptInput.value = saved.promptInput;
+  }
+  if (typeof saved.liveRoute === "string") {
+    state.liveRoute = saved.liveRoute;
+  }
 }
 
 function persistWorkspace() {
@@ -2081,28 +2149,7 @@ function restoreWorkspace() {
       return;
     }
     const saved = JSON.parse(raw);
-    if (typeof saved.noteText === "string") {
-      state.noteText = saved.noteText;
-      elements.notesPad.value = saved.noteText;
-    }
-    if (Array.isArray(saved.writer?.paragraphs) && saved.writer.paragraphs.length > 0) {
-      replaceWriterWithText(saved.writer.paragraphs.join("\n\n"));
-    }
-    if (saved.sheet?.rows && Array.isArray(saved.sheet.rows)) {
-      if (Array.isArray(saved.sheet.columns) && saved.sheet.columns.length > 0) {
-        state.sheetColumns = saved.sheet.columns.map((column) => String(column));
-      }
-      state.sheetRows = saved.sheet.rows;
-    }
-    if (Array.isArray(saved.slides)) {
-      state.slides = saved.slides;
-    }
-    if (typeof saved.mode === "string") {
-      state.mode = saved.mode;
-    }
-    if (Array.isArray(saved.commandHistory)) {
-      state.commandHistory = saved.commandHistory;
-    }
+    applyWorkspaceSnapshot(saved);
   } catch {}
 }
 
@@ -2540,6 +2587,11 @@ elements.newDocument.addEventListener("click", async () => {
   await refreshDocumentView();
   setStatus("빈 문서를 새로 만들었습니다.");
   setBadge("새 문서");
+});
+
+elements.exportWorkspace?.addEventListener("click", () => {
+  exportWorkspacePackage();
+  setStatus("작업 패키지를 저장했습니다.", toWorkspaceFileName(state.fileName));
 });
 
 elements.newNote.addEventListener("click", () => {

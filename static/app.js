@@ -17,6 +17,7 @@ const elements = {
   insertHeading: document.querySelector("#insert-heading"),
   insertParagraph: document.querySelector("#insert-paragraph"),
   insertTable: document.querySelector("#insert-table"),
+  addWriterParagraph: document.querySelector("#add-writer-paragraph"),
   workspaceWriter: document.querySelector("#workspace-writer"),
   workspaceNotes: document.querySelector("#workspace-notes"),
   workspaceSheet: document.querySelector("#workspace-sheet"),
@@ -58,6 +59,7 @@ const elements = {
   dashboardPlan: document.querySelector("#dashboard-plan"),
   modeHint: document.querySelector("#mode-hint"),
   pages: document.querySelector("#pages"),
+  writerEditor: document.querySelector("#writer-editor"),
   promptInput: document.querySelector("#prompt-input"),
   runAgent: document.querySelector("#run-agent"),
   reply: document.querySelector("#agent-reply"),
@@ -1175,6 +1177,12 @@ function replaceWriterWithText(text) {
       paraIndex = appendParagraphAfter(paraIndex);
     }
   });
+}
+
+function rebuildWriterFromParagraphItems(items) {
+  const paragraphs = (items || []).map((item) => String(item || "").trim()).filter(Boolean);
+  replaceWriterWithText(paragraphs.join("\n\n"));
+  persistWorkspace();
 }
 
 function appendWriterText(text) {
@@ -2361,6 +2369,48 @@ function renderPages() {
   }
 }
 
+function renderWriterEditor(document) {
+  if (!elements.writerEditor) {
+    return;
+  }
+  const paragraphs = document?.paragraphs || [];
+  if (paragraphs.length === 0) {
+    elements.writerEditor.innerHTML = "<div class='writer-paragraph-card'><strong>문단 없음</strong><span>문단 추가로 시작할 수 있습니다.</span></div>";
+    return;
+  }
+  elements.writerEditor.innerHTML = paragraphs
+    .map(
+      (item, index) => `
+        <div class="writer-paragraph-card">
+          <div class="writer-paragraph-head">
+            <strong>문단 ${index + 1}</strong>
+            <button class="secondary writer-delete-paragraph" data-index="${index}">삭제</button>
+          </div>
+          <textarea class="writer-paragraph-input" data-index="${index}">${escapeHtml(item.text || "")}</textarea>
+        </div>
+      `,
+    )
+    .join("");
+  const sync = () => {
+    const values = [...elements.writerEditor.querySelectorAll(".writer-paragraph-input")].map((node) => node.value);
+    rebuildWriterFromParagraphItems(values);
+    refreshDocumentView();
+  };
+  elements.writerEditor.querySelectorAll(".writer-paragraph-input").forEach((input) => {
+    input.addEventListener("change", sync);
+  });
+  elements.writerEditor.querySelectorAll(".writer-delete-paragraph").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targetIndex = Number(button.dataset.index || "-1");
+      const values = [...elements.writerEditor.querySelectorAll(".writer-paragraph-input")]
+        .map((node) => node.value)
+        .filter((_, index) => index !== targetIndex);
+      rebuildWriterFromParagraphItems(values);
+      await refreshDocumentView();
+    });
+  });
+}
+
 function getParagraphLength(section, paragraph) {
   return state.doc.getParagraphLength(section, paragraph);
 }
@@ -2502,6 +2552,7 @@ async function refreshDocumentView() {
   const summary = getDocumentSummary();
   updateMeta(summary);
   renderPages();
+  renderWriterEditor(summary);
 }
 
 async function runAgent() {
@@ -2709,6 +2760,17 @@ elements.insertTable?.addEventListener("click", async () => {
   await refreshDocumentView();
   setMode("writer");
   setStatus("표 템플릿을 추가했습니다.");
+});
+
+elements.addWriterParagraph?.addEventListener("click", async () => {
+  const items = getDocumentSummary()
+    .paragraphs
+    .map((item) => item.text);
+  items.push("새 문단");
+  rebuildWriterFromParagraphItems(items);
+  await refreshDocumentView();
+  setMode("writer");
+  setStatus("문단을 추가했습니다.");
 });
 
 elements.newNote.addEventListener("click", () => {

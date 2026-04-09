@@ -1,4 +1,4 @@
-# Office Agent Staff
+# HanPilot
 
 `rhwp`를 브라우저 편집 엔진으로 활용하고, `claw-code`의 도구 지향 에이전트 발상을 차용한 한국어 문서 작성용 오피스 에이전트입니다.
 
@@ -40,7 +40,7 @@ npm run desktop
 
 이 모드에서는 다음이 함께 동작합니다.
 
-- 독립 macOS 앱 창으로 Office Agent Staff 실행
+- 독립 macOS 앱 창으로 HanPilot 실행
 - 메뉴바에서 CPU / MEM / BAT 사용률 표시
 - 클릭 시 작은 시스템 모니터 팝오버 표시
 - `Vision Lab` 창에서 Head Pointer / 외장 카메라 / lid angle 실험 구조 확인

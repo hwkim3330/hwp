@@ -219,6 +219,59 @@ input {
   font-size: 13px;
 }
 
+.ops-card {
+  background: linear-gradient(180deg, rgba(255, 251, 244, 0.95), rgba(248, 242, 231, 0.96));
+}
+
+.compact-row {
+  align-items: stretch;
+}
+
+.ops-input {
+  flex: 1 1 240px;
+  min-height: auto;
+  padding: 11px 14px;
+  border-radius: 14px;
+}
+
+.ops-results {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.search-result {
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+}
+
+.search-result strong,
+.search-result span,
+.search-result a {
+  display: block;
+}
+
+.search-result strong {
+  font-size: 13px;
+}
+
+.search-result span {
+  margin-top: 6px;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 13px;
+}
+
+.search-result a {
+  margin-top: 8px;
+  color: var(--accent);
+  text-decoration: none;
+  word-break: break-all;
+  font-size: 12px;
+}
+
 .registry-row span {
   display: block;
   margin-top: 5px;

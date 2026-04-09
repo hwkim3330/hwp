@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Office Agent Staff</title>
+    <title>HanPilot</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -16,10 +16,10 @@
     <div class="shell">
       <aside class="panel panel-left">
         <div class="brand">
-          <p class="eyebrow">Korean Office Agent</p>
-          <h1>Office Agent Staff</h1>
+          <p class="eyebrow">Korean Agent Workspace</p>
+          <h1>HanPilot</h1>
           <p class="lede">
-            `rhwp` 기반 HWP 편집 엔진에 한국어 문서 작성 에이전트를 붙인 로컬 워크스테이션.
+            한국어 문서, 조사, 자동화, 비전 실험을 하나로 묶는 로컬 오피스 에이전트 워크스테이션.
           </p>
         </div>
 
@@ -123,7 +123,7 @@
           <div class="command-head">
             <div>
               <p class="eyebrow">Command Center</p>
-              <h2>Agent OS</h2>
+              <h2>HanPilot Core</h2>
             </div>
             <span id="agent-runtime" class="badge runtime-badge">대기</span>
           </div>
@@ -165,6 +165,35 @@
               <div id="permission-registry" class="registry-list">로딩 중...</div>
             </div>
           </div>
+        </div>
+
+        <div class="card ops-card">
+          <div class="command-head">
+            <div>
+              <p class="eyebrow">Research</p>
+              <h2>Web Search</h2>
+            </div>
+          </div>
+          <div class="button-row compact-row">
+            <input id="search-query" class="ops-input" type="text" placeholder="검색어를 입력하거나 현재 프롬프트를 사용합니다." />
+            <button id="run-search" class="secondary">검색 실행</button>
+          </div>
+          <div id="search-results" class="ops-results">검색 결과가 없습니다.</div>
+        </div>
+
+        <div class="card ops-card">
+          <div class="command-head">
+            <div>
+              <p class="eyebrow">Automation</p>
+              <h2>System Actions</h2>
+            </div>
+          </div>
+          <div class="button-row">
+            <button id="open-browser" class="secondary">브라우저</button>
+            <button id="open-finder" class="secondary">Finder</button>
+            <button id="open-monitor" class="secondary">활동 모니터</button>
+          </div>
+          <div id="system-action-log" class="reply planner-meta">제한된 시스템 액션만 허용됩니다.</div>
         </div>
 
         <div class="card chat-card">

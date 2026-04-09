@@ -45,6 +45,13 @@ const elements = {
   capHwpforgeMeta: document.querySelector("#cap-hwpforge-meta"),
   toolRegistry: document.querySelector("#tool-registry"),
   permissionRegistry: document.querySelector("#permission-registry"),
+  searchQuery: document.querySelector("#search-query"),
+  runSearch: document.querySelector("#run-search"),
+  searchResults: document.querySelector("#search-results"),
+  openBrowser: document.querySelector("#open-browser"),
+  openFinder: document.querySelector("#open-finder"),
+  openMonitor: document.querySelector("#open-monitor"),
+  systemActionLog: document.querySelector("#system-action-log"),
   promptChips: [...document.querySelectorAll(".prompt-chip")],
 };
 
@@ -61,7 +68,7 @@ const state = {
   slides: [],
 };
 
-const STORAGE_KEY = "office-agent-staff-state-v1";
+const STORAGE_KEY = "hanpilot-state-v1";
 
 function installMeasureTextWidth() {
   let ctx = null;
@@ -160,6 +167,38 @@ function renderRegistryRows(target, items, emptyText) {
     .join("");
 }
 
+function renderSearchResults(results) {
+  if (!elements.searchResults) {
+    return;
+  }
+  if (!Array.isArray(results) || results.length === 0) {
+    elements.searchResults.textContent = "검색 결과가 없습니다.";
+    return;
+  }
+  elements.searchResults.innerHTML = results
+    .map(
+      (item) => `
+        <div class="search-result">
+          <strong>${escapeHtml(item.title || "untitled")}</strong>
+          <span>${escapeHtml(item.snippet || "설명 없음")}</span>
+          <a href="${escapeHtml(item.url || "#")}" target="_blank" rel="noreferrer noopener">${escapeHtml(item.url || "")}</a>
+          <div class="button-row">
+            <button class="secondary search-open" data-url="${encodeURIComponent(item.url || "")}">열기</button>
+          </div>
+        </div>
+      `,
+    )
+    .join("");
+  elements.searchResults.querySelectorAll(".search-open").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const url = decodeURIComponent(button.dataset.url || "");
+      if (url) {
+        await runSystemAction("open_url", { url }, `링크 열기: ${url}`);
+      }
+    });
+  });
+}
+
 async function refreshRuntimeRegistry() {
   try {
     const response = await fetch("/api/runtime", { cache: "no-store" });
@@ -176,6 +215,71 @@ async function refreshRuntimeRegistry() {
     if (elements.permissionRegistry) {
       elements.permissionRegistry.textContent = String(error.message || error);
     }
+  }
+}
+
+async function runWebSearch(query) {
+  const input = String(query || "").trim();
+  if (!input) {
+    renderSearchResults([]);
+    return;
+  }
+  if (elements.runSearch) {
+    elements.runSearch.disabled = true;
+  }
+  if (elements.searchResults) {
+    elements.searchResults.textContent = "검색 중...";
+  }
+  try {
+    const response = await fetch("/api/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: input }),
+    });
+    const result = await response.json();
+    if (!result.ok) {
+      throw new Error(result.detail || result.error || "search failed");
+    }
+    renderSearchResults(result.results || []);
+    if (elements.searchQuery) {
+      elements.searchQuery.value = input;
+    }
+    setStatus("웹 검색 완료", `${(result.results || []).length}건 결과`);
+  } catch (error) {
+    if (elements.searchResults) {
+      elements.searchResults.textContent = String(error.message || error);
+    }
+    setStatus("웹 검색 실패", String(error.message || error));
+  } finally {
+    if (elements.runSearch) {
+      elements.runSearch.disabled = false;
+    }
+  }
+}
+
+async function runSystemAction(action, payload, successMessage = "시스템 액션 실행 완료") {
+  if (elements.systemActionLog) {
+    elements.systemActionLog.textContent = "시스템 액션 실행 중...";
+  }
+  try {
+    const response = await fetch("/api/system-action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const result = await response.json();
+    if (!result.ok) {
+      throw new Error(result.detail || result.error || "system action failed");
+    }
+    if (elements.systemActionLog) {
+      elements.systemActionLog.textContent = `${successMessage}\n${JSON.stringify(result.result, null, 2)}`;
+    }
+    return result.result;
+  } catch (error) {
+    if (elements.systemActionLog) {
+      elements.systemActionLog.textContent = String(error.message || error);
+    }
+    throw error;
   }
 }
 
@@ -680,16 +784,16 @@ async function exportDocx() {
     "app.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
-  <Application>Office Agent Staff</Application>
+  <Application>HanPilot</Application>
 </Properties>`,
   );
   zip.folder("docProps")?.file(
     "core.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <dc:title>${escapeXml(summary.fileName || "Office Agent Document")}</dc:title>
-  <dc:creator>Office Agent Staff</dc:creator>
-  <cp:lastModifiedBy>Office Agent Staff</cp:lastModifiedBy>
+  <dc:title>${escapeXml(summary.fileName || "HanPilot Document")}</dc:title>
+  <dc:creator>HanPilot</dc:creator>
+  <cp:lastModifiedBy>HanPilot</cp:lastModifiedBy>
   <dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created>
   <dcterms:modified xsi:type="dcterms:W3CDTF">${created}</dcterms:modified>
 </cp:coreProperties>`,
@@ -770,15 +874,15 @@ async function exportXlsx() {
     "app.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
-  <Application>Office Agent Staff</Application>
+  <Application>HanPilot</Application>
 </Properties>`,
   );
   zip.folder("docProps")?.file(
     "core.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <dc:title>${escapeXml(state.fileName || "Office Agent Sheet")}</dc:title>
-  <dc:creator>Office Agent Staff</dc:creator>
+  <dc:title>${escapeXml(state.fileName || "HanPilot Sheet")}</dc:title>
+  <dc:creator>HanPilot</dc:creator>
 </cp:coreProperties>`,
   );
   zip.folder("xl")?.file(
@@ -870,7 +974,7 @@ async function exportPptx() {
     "app.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
-  <Application>Office Agent Staff</Application>
+  <Application>HanPilot</Application>
   <Slides>${slides.length}</Slides>
 </Properties>`,
   );
@@ -878,8 +982,8 @@ async function exportPptx() {
     "core.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <dc:title>${escapeXml(state.fileName || "Office Agent Slides")}</dc:title>
-  <dc:creator>Office Agent Staff</dc:creator>
+  <dc:title>${escapeXml(state.fileName || "HanPilot Slides")}</dc:title>
+  <dc:creator>HanPilot</dc:creator>
   <dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created>
   <dcterms:modified xsi:type="dcterms:W3CDTF">${created}</dcterms:modified>
 </cp:coreProperties>`,
@@ -920,7 +1024,7 @@ async function exportPptx() {
   zip.folder("ppt")?.folder("theme")?.file(
     "theme1.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office Agent Theme">
+<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="HanPilot Theme">
   <a:themeElements>
     <a:clrScheme name="Default">
       <a:dk1><a:srgbClr val="1F1A17"/></a:dk1>
@@ -946,7 +1050,7 @@ async function exportPptx() {
     "slideMaster1.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:cSld name="Office Agent Master"><p:spTree/></p:cSld>
+  <p:cSld name="HanPilot Master"><p:spTree/></p:cSld>
   <p:clrMap accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" bg1="lt1" bg2="lt1" folHlink="folHlink" hlink="hlink" tx1="dk1" tx2="dk1"/>
   <p:sldLayoutIdLst><p:sldLayoutId id="1" r:id="rId1"/></p:sldLayoutIdLst>
 </p:sldMaster>`,
@@ -1538,7 +1642,7 @@ async function runAgent() {
 
     const plan = result.plan;
     elements.planBox.textContent = JSON.stringify(plan, null, 2);
-    elements.plannerMeta.textContent = `플래너: ${plan.meta?.planner || "-"}${plan.meta?.reason ? ` | 사유: ${plan.meta.reason}` : ""}`;
+    elements.plannerMeta.textContent = `플래너: ${plan.meta?.planner || "-"}${plan.meta?.reason ? ` | 사유: ${plan.meta.reason}` : ""}${plan.meta?.search_results ? ` | 검색 결과: ${plan.meta.search_results}` : ""}`;
 
     for (const operation of plan.operations) {
       if (operation.type === "no_op") {
@@ -1700,10 +1804,35 @@ elements.fileInput.addEventListener("change", async (event) => {
 });
 
 elements.runAgent.addEventListener("click", runAgent);
+elements.runSearch?.addEventListener("click", () => runWebSearch(elements.searchQuery?.value || elements.promptInput.value));
+elements.searchQuery?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    runWebSearch(elements.searchQuery.value);
+  }
+});
+elements.openBrowser?.addEventListener("click", () =>
+  runSystemAction("open_app", { app: "Safari" }, "브라우저를 열었습니다.").catch((error) =>
+    setStatus("시스템 액션 실패", String(error.message || error)),
+  ),
+);
+elements.openFinder?.addEventListener("click", () =>
+  runSystemAction("open_app", { app: "Finder" }, "Finder를 열었습니다.").catch((error) =>
+    setStatus("시스템 액션 실패", String(error.message || error)),
+  ),
+);
+elements.openMonitor?.addEventListener("click", () =>
+  runSystemAction("open_app", { app: "Activity Monitor" }, "활동 모니터를 열었습니다.").catch((error) =>
+    setStatus("시스템 액션 실패", String(error.message || error)),
+  ),
+);
 
 elements.promptChips.forEach((button) => {
   button.addEventListener("click", () => {
     elements.promptInput.value = button.dataset.prompt || "";
+    if (elements.searchQuery && !elements.searchQuery.value.trim()) {
+      elements.searchQuery.value = elements.promptInput.value;
+    }
   });
 });
 

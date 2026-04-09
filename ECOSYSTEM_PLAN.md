@@ -1,8 +1,8 @@
-# Office Agent Staff Ecosystem Plan
+# HanPilot Ecosystem Plan
 
 ## 목표
 
-Office Agent Staff를 단순 브라우저 편집기에서 벗어나, 한국어 문서 생태계를 실제로 다루는 로컬 오피스 워크스테이션으로 끌어올린다.
+HanPilot을 단순 브라우저 편집기에서 벗어나, 한국어 문서 생태계를 실제로 다루는 로컬 오피스 워크스테이션으로 끌어올린다.
 
 핵심 방향은 다음 두 축이다.
 

@@ -1,5 +1,5 @@
 {
-  "name": "office-agent-staff",
+  "name": "hanpilot",
   "version": "1.1.0",
   "description": "`rhwp`를 브라우저 편집 엔진으로 활용하고, `claw-code`의 도구 지향 에이전트 발상을 차용한 한국어 문서 작성용 오피스 에이전트입니다.",
   "main": "electron/main.js",
@@ -37,7 +37,7 @@
   },
   "build": {
     "appId": "com.hwkim.officeagentstaff",
-    "productName": "Office Agent Staff",
+    "productName": "HanPilot",
     "directories": {
       "output": "dist-electron"
     },

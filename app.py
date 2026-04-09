@@ -9,6 +9,7 @@ from html.parser import HTMLParser
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, quote, unquote, urlparse
 from urllib import error, request
 
 
@@ -22,10 +23,11 @@ LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "20"))
 LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "900"))
 HWPFORGE_CMD = os.environ.get("HWPFORGE_CMD", "hwpforge")
-ENABLE_WEB_SEARCH = os.environ.get("ENABLE_WEB_SEARCH", "0") == "1"
+ENABLE_WEB_SEARCH = os.environ.get("ENABLE_WEB_SEARCH", "1") != "0"
 ENABLE_VISION_EXPERIMENTS = os.environ.get("ENABLE_VISION_EXPERIMENTS", "1") != "0"
-ENABLE_SYSTEM_ACTIONS = os.environ.get("ENABLE_SYSTEM_ACTIONS", "0") == "1"
+ENABLE_SYSTEM_ACTIONS = os.environ.get("ENABLE_SYSTEM_ACTIONS", "1") != "0"
 ENABLE_FILE_AUTOMATION = os.environ.get("ENABLE_FILE_AUTOMATION", "1") != "0"
+USER_AGENT = "HanPilot/1.0 (+https://github.com/hwkim3330/hwp)"
 
 
 SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
@@ -374,6 +376,42 @@ def build_generic_writer_blocks(prompt):
     ]
 
 
+def build_research_writer_blocks(prompt, search_results):
+    bullets = []
+    references = []
+    for index, item in enumerate(search_results[:5], start=1):
+        snippet = item.get("snippet", "").strip()
+        summary = item["title"]
+        if snippet:
+            summary = f"{summary}: {snippet[:180]}"
+        bullets.append(summary)
+        references.append([str(index), item["title"], item["url"]])
+    return [
+        {"kind": "heading", "level": 1, "text": "조사 기반 초안"},
+        {
+            "kind": "paragraph",
+            "text": f"요청 사항\n{prompt.strip()}\n\n아래 내용은 웹 검색 결과를 바탕으로 정리한 작업용 초안입니다.",
+        },
+        {"kind": "heading", "level": 2, "text": "검색 요약"},
+        {"kind": "numbered", "items": bullets or ["유효한 검색 결과를 찾지 못했습니다."]},
+        {"kind": "heading", "level": 2, "text": "활용 방향"},
+        {
+            "kind": "bullets",
+            "items": [
+                "핵심 주장과 배경 설명을 검색 결과와 현재 목적에 맞게 다시 정리합니다.",
+                "출처가 필요한 문장은 참고 링크를 기반으로 수동 검증 후 반영합니다.",
+                "최종 문서에서는 초안 문체를 목적에 맞는 보고서 또는 논문 문체로 다듬습니다.",
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "참고 링크"},
+        {
+            "kind": "table",
+            "headers": ["No", "제목", "링크"],
+            "rows": references or [["1", "검색 결과 없음", ""]],
+        },
+    ]
+
+
 class BlockHtmlParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -445,6 +483,109 @@ def html_to_blocks(html):
     parser.feed(str(html or ""))
     blocks = normalize_blocks(parser.blocks)
     return blocks or build_generic_writer_blocks("내용 없음")
+
+
+class DuckDuckGoHtmlParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.results = []
+        self._capture_title = False
+        self._capture_snippet = False
+        self._current = None
+
+    def handle_starttag(self, tag, attrs):
+        attrs_map = dict(attrs)
+        class_name = attrs_map.get("class", "")
+        if tag == "a" and "result__a" in class_name:
+            self._capture_title = True
+            self._current = {"title": "", "url": attrs_map.get("href", ""), "snippet": ""}
+        elif tag in {"a", "div"} and "result__snippet" in class_name and self._current:
+            self._capture_snippet = True
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self._capture_title:
+            self._capture_title = False
+            if self._current and self._current["title"]:
+                self.results.append(self._current)
+                self._current = None
+        if tag in {"a", "div"} and self._capture_snippet:
+            self._capture_snippet = False
+
+    def handle_data(self, data):
+        text = re.sub(r"\s+", " ", data or "").strip()
+        if not text or not self._current:
+            return
+        if self._capture_title:
+            self._current["title"] = f"{self._current['title']} {text}".strip()
+        elif self._capture_snippet:
+            self._current["snippet"] = f"{self._current['snippet']} {text}".strip()
+
+
+def should_use_web_search(prompt):
+    lowered = prompt.lower()
+    return any(
+        keyword in lowered
+        for keyword in (
+            "검색",
+            "논문",
+            "참고문헌",
+            "레퍼런스",
+            "자료 찾아",
+            "웹 검색",
+            "조사",
+            "research",
+            "citation",
+            "source",
+        )
+    )
+
+
+def web_search(query, max_results=5):
+    if not ENABLE_WEB_SEARCH:
+        return []
+    url = f"https://html.duckduckgo.com/html/?q={quote(query)}"
+    req = request.Request(url, headers={"User-Agent": USER_AGENT})
+    with request.urlopen(req, timeout=10) as response:
+        html = response.read().decode("utf-8", errors="ignore")
+    parser = DuckDuckGoHtmlParser()
+    parser.feed(html)
+    unique = []
+    seen = set()
+    for item in parser.results:
+        url_value = normalize_search_url(item.get("url", "").strip())
+        title = item.get("title", "").strip()
+        if not url_value or not title or url_value in seen:
+            continue
+        seen.add(url_value)
+        unique.append({"title": title[:240], "url": url_value[:800], "snippet": item.get("snippet", "")[:400]})
+        if len(unique) >= max_results:
+            break
+    return unique
+
+
+def format_search_context(results):
+    if not results:
+        return ""
+    lines = ["web_search_results:"]
+    for index, item in enumerate(results, start=1):
+        lines.append(f"{index}. {item['title']}")
+        lines.append(f"   url: {item['url']}")
+        if item.get("snippet"):
+            lines.append(f"   snippet: {item['snippet']}")
+    return "\n".join(lines)
+
+
+def normalize_search_url(url_value):
+    if not url_value:
+        return ""
+    if url_value.startswith("//"):
+        url_value = f"https:{url_value}"
+    parsed = urlparse(url_value)
+    if "duckduckgo.com" in parsed.netloc:
+        target = parse_qs(parsed.query).get("uddg", [""])[0]
+        if target:
+            return unquote(target)
+    return url_value
 
 
 def build_weekly_report_html():
@@ -641,7 +782,7 @@ def finalize_plan(mode, user_prompt, document, workspace, plan):
     return plan
 
 
-def fallback_plan(user_prompt, document, workspace, reason):
+def fallback_plan(user_prompt, document, workspace, reason, search_results=None):
     prompt = user_prompt.strip()
     prompt_lower = prompt.lower()
     mode = str(workspace.get("mode", "writer"))
@@ -668,6 +809,14 @@ def fallback_plan(user_prompt, document, workspace, reason):
             "meta": {"planner": "fallback", "reason": reason},
         }
 
+    if search_results and should_use_web_search(prompt):
+        blocks = build_research_writer_blocks(prompt, search_results)
+        return {
+            "reply": "검색 결과를 바탕으로 연구용 초안을 생성했습니다. 오프라인 플래너를 사용했습니다.",
+            "operations": [{"type": "set_document_blocks", "blocks": blocks}],
+            "meta": {"planner": "fallback", "reason": reason, "search_results": len(search_results)},
+        }
+
     if any(keyword in prompt for keyword in ("주간업무보고", "주간 보고", "업무보고")):
         html = build_weekly_report_html()
         reply = "주간업무보고 형식으로 초안을 작성했습니다."
@@ -685,21 +834,37 @@ def fallback_plan(user_prompt, document, workspace, reason):
         reply = "기존 문서를 정돈된 문체로 재구성했습니다."
     else:
         blocks = build_generic_writer_blocks(prompt)
+        if search_results:
+            blocks.extend(
+                [
+                    {"kind": "heading", "level": 2, "text": "검색 참고"},
+                    {
+                        "kind": "bullets",
+                        "items": [f"{item['title']} | {item['url']}" for item in search_results[:5]],
+                    },
+                ]
+            )
         reply = "기본 업무 문서 초안을 생성했습니다."
         return {
             "reply": f"{reply} 오프라인 플래너를 사용했습니다.",
             "operations": [{"type": "set_document_blocks", "blocks": blocks}],
-            "meta": {"planner": "fallback", "reason": reason},
+            "meta": {"planner": "fallback", "reason": reason, "search_results": len(search_results or [])},
         }
 
     return {
         "reply": f"{reply} 오프라인 플래너를 사용했습니다.",
         "operations": [{"type": "set_document_html", "html": html}],
-        "meta": {"planner": "fallback", "reason": reason},
+        "meta": {"planner": "fallback", "reason": reason, "search_results": len(search_results or [])},
     }
 
 
 def call_llm(user_prompt, document):
+    search_results = []
+    if should_use_web_search(user_prompt):
+        try:
+            search_results = web_search(user_prompt, max_results=5)
+        except Exception:
+            search_results = []
     user_content = json.dumps(
         {
             "user_request": user_prompt,
@@ -710,6 +875,7 @@ def call_llm(user_prompt, document):
                 "sheet": compact_sheet(document.get("sheet", {})),
                 "slides": compact_slides(document.get("slides", [])),
             },
+            "web_search": search_results,
         },
         ensure_ascii=False,
     )
@@ -718,7 +884,7 @@ def call_llm(user_prompt, document):
         {"role": "user", "content": user_content},
     ]
     if is_ollama_base_url():
-        return call_ollama_llm(messages)
+        return call_ollama_llm(messages), search_results
 
     payload = {
         "model": LLM_MODEL,
@@ -742,7 +908,7 @@ def call_llm(user_prompt, document):
         raw = response.read().decode("utf-8")
     data = json.loads(raw)
     content = data["choices"][0]["message"]["content"]
-    return validate_plan(json.loads(extract_json_object(content)))
+    return validate_plan(json.loads(extract_json_object(content))), search_results
 
 
 def call_ollama_llm(messages):
@@ -832,13 +998,13 @@ def permission_registry():
             "id": "web.search",
             "label": "Web Search",
             "status": "disabled" if not ENABLE_WEB_SEARCH else "granted",
-            "detail": "검색 기반 문서 보강은 아직 비활성",
+            "detail": "검색 기반 문서 보강 및 연구 컨텍스트 주입",
         },
         {
             "id": "system.actions",
             "label": "System Actions",
             "status": "disabled" if not ENABLE_SYSTEM_ACTIONS else "experimental",
-            "detail": "클릭 / 키입력 같은 컴퓨터 유즈 액션은 아직 준비 단계",
+            "detail": "open_url / reveal_path / open_app 제한 액션 허용",
         },
     ]
 
@@ -878,15 +1044,15 @@ def tool_registry():
             "id": "web_search",
             "label": "Web Search",
             "category": "research",
-            "status": "disabled" if not ENABLE_WEB_SEARCH else "experimental",
-            "detail": "검색 증강 파이프라인 연결 예정",
+            "status": "disabled" if not ENABLE_WEB_SEARCH else "ready",
+            "detail": "DuckDuckGo HTML 검색 결과를 Gemma 4 컨텍스트에 주입",
         },
         {
             "id": "system_actions",
             "label": "System Actions",
             "category": "automation",
             "status": "disabled" if not ENABLE_SYSTEM_ACTIONS else "experimental",
-            "detail": "권한 게이트 뒤 시스템 액션 실행 예정",
+            "detail": "권한 게이트 뒤 open_url / reveal_path / open_app 실행",
         },
     ]
 
@@ -897,6 +1063,30 @@ def runtime_registry():
         "permissions": permission_registry(),
         "tools": tool_registry(),
     }
+
+
+def run_system_action(action, payload):
+    if not ENABLE_SYSTEM_ACTIONS:
+        raise PermissionError("system actions disabled")
+    if action == "open_url":
+        target = str(payload.get("url", "")).strip()
+        if not target.startswith(("http://", "https://")):
+            raise ValueError("invalid url")
+        subprocess.run(["open", target], check=True)
+        return {"action": action, "target": target}
+    if action == "reveal_path":
+        target = str(payload.get("path", "")).strip()
+        if not target:
+            raise ValueError("path required")
+        subprocess.run(["open", "-R", target], check=True)
+        return {"action": action, "target": target}
+    if action == "open_app":
+        target = str(payload.get("app", "")).strip()
+        if not target:
+            raise ValueError("app required")
+        subprocess.run(["open", "-a", target], check=True)
+        return {"action": action, "target": target}
+    raise ValueError(f"unknown action: {action}")
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -923,6 +1113,29 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        if self.path == "/api/search":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(body or "{}")
+                query = str(payload.get("query", "")).strip()
+                if not query:
+                    raise ValueError("query is required")
+                self._send_json({"ok": True, "results": web_search(query, max_results=5)})
+            except Exception as exc:
+                self._send_json({"ok": False, "error": "search_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/system-action":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(body or "{}")
+                action = str(payload.get("action", "")).strip()
+                result = run_system_action(action, payload)
+                self._send_json({"ok": True, "result": result})
+            except Exception as exc:
+                self._send_json({"ok": False, "error": "system_action_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
         if self.path == "/api/hwpforge/status":
             self._send_json({"ok": True, "hwpforge": hwpforge_status()})
             return
@@ -946,11 +1159,20 @@ class Handler(SimpleHTTPRequestHandler):
                 raise ValueError("prompt is required")
             try:
                 llm_document = {**document, **workspace}
-                plan = call_llm(user_prompt, llm_document)
+                plan, search_results = call_llm(user_prompt, llm_document)
                 plan = finalize_plan(workspace["mode"], user_prompt, document, workspace, plan)
-                plan = {**plan, "meta": {"planner": "llm"}}
+                meta = {"planner": "llm"}
+                if search_results:
+                    meta["search_results"] = len(search_results)
+                plan = {**plan, "meta": meta}
             except (error.HTTPError, error.URLError, TimeoutError, ValueError, KeyError, json.JSONDecodeError) as exc:
-                plan = fallback_plan(user_prompt, document, workspace, str(exc))
+                fallback_results = []
+                if should_use_web_search(user_prompt):
+                    try:
+                        fallback_results = web_search(user_prompt, max_results=5)
+                    except Exception:
+                        fallback_results = []
+                plan = fallback_plan(user_prompt, document, workspace, str(exc), fallback_results)
             self._send_json({"ok": True, "plan": plan})
         except Exception as exc:
             self._send_json(
@@ -973,7 +1195,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
-    print(f"Office Agent Staff listening on http://{HOST}:{PORT}")
+    print(f"HanPilot listening on http://{HOST}:{PORT}")
     print(f"LLM endpoint: {LLM_BASE_URL}/chat/completions")
     print(f"Model: {LLM_MODEL}")
     print(f"LLM timeout: {LLM_TIMEOUT_SECONDS}s")

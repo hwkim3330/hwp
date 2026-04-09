@@ -251,6 +251,10 @@
         line-height: 1.45;
       }
 
+      .wide-button {
+        width: 100%;
+      }
+
       @keyframes bob {
         0%,
         100% { transform: translateY(0) rotate(0deg); }
@@ -349,6 +353,12 @@
           </div>
           <div id="preset-meta" class="preset-meta">현재 직전에 쓰던 앱으로 돌아가 프리셋 문구를 입력합니다.</div>
         </article>
+
+        <article class="card wide">
+          <div class="label">Clipboard Capture</div>
+          <button id="capture-button" class="control-button wide-button" type="button">클립보드 캡처</button>
+          <div id="capture-meta" class="preset-meta">단축키 `Cmd/Ctrl + Shift + 1` 또는 이 버튼으로 영역 캡처 후 클립보드에 넣습니다.</div>
+        </article>
       </section>
 
       <div class="footer">가능한 수치만 안정적으로 표시합니다. GPU 실시간 퍼센트와 ANE 사용률은 현재 공개 경로 기준 제한이 있습니다.</div>
@@ -380,6 +390,8 @@
       const cursorToggle = document.getElementById("cursor-toggle");
       const cursorState = document.getElementById("cursor-state");
       const presetMeta = document.getElementById("preset-meta");
+      const captureButton = document.getElementById("capture-button");
+      const captureMeta = document.getElementById("capture-meta");
       let cursorOverlayEnabled = false;
 
       for (let index = 0; index < 16; index += 1) {
@@ -461,6 +473,9 @@
           ? "포인터를 손잡이로 삼아 뒤에 따라오는 물리 채찍을 그립니다."
           : "커서가 잘 안 보이면 채찍 오버레이를 켜면 됩니다.";
         updateCursorOverlayUi(stats.cursorOverlayEnabled);
+        if (stats.captureStatus?.message) {
+          captureMeta.textContent = `${stats.captureStatus.message} · 단축키 Cmd/Ctrl + Shift + 1`;
+        }
 
         const bars = [...sparkGrid.children];
         const loads = Array.isArray(stats.cpuCores) ? stats.cpuCores : [];
@@ -493,6 +508,16 @@
             presetMeta.textContent = String(error.message || error);
           }
         });
+      });
+
+      captureButton.addEventListener("click", async () => {
+        captureMeta.textContent = "캡처 실행 중...";
+        try {
+          const result = await window.desktopMonitor.captureScreenshot();
+          captureMeta.textContent = `${result?.result?.message || "클립보드에 캡처 완료"} · 단축키 Cmd/Ctrl + Shift + 1`;
+        } catch (error) {
+          captureMeta.textContent = String(error.message || error);
+        }
       });
     </script>
   </body>

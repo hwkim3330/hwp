@@ -48,6 +48,7 @@ const elements = {
   sessionMeta: document.querySelector("#session-meta"),
   sessionLog: document.querySelector("#session-log"),
   actionResearchNote: document.querySelector("#action-research-note"),
+  actionResearchComplete: document.querySelector("#action-research-complete"),
   actionMinutes: document.querySelector("#action-minutes"),
   actionReport: document.querySelector("#action-report"),
   actionSlides: document.querySelector("#action-slides"),
@@ -1944,6 +1945,19 @@ function applyGuiAction(kind) {
     setWorkflowHint("연구노트 초안 모드입니다. 검색 포함을 켜고 실행하면 참고 링크까지 정리합니다.");
     return;
   }
+  if (kind === "research_complete") {
+    setMode("writer");
+    if (elements.searchEnabled) {
+      elements.searchEnabled.checked = true;
+    }
+    if (elements.modelProfile) {
+      elements.modelProfile.value = "deep";
+    }
+    elements.promptInput.value =
+      "연구노트를 완성형으로 작성해줘. 제목, 배경, 핵심 질문, 조사 요약, 참고 링크, 활용 아이디어, 다음 액션을 포함하고 문단 구조를 분명하게 나눠줘.";
+    setWorkflowHint("완성형 연구노트 모드입니다. 검색 포함 + 깊은 작성 프로필로 긴 구조 문서를 만듭니다.");
+    return;
+  }
   if (kind === "minutes") {
     setMode("writer");
     elements.promptInput.value = "회의록 형태로 정리하고 결정사항과 액션아이템을 표로 넣어줘.";
@@ -2097,6 +2111,7 @@ elements.promptChips.forEach((button) => {
 });
 
 elements.actionResearchNote?.addEventListener("click", () => applyGuiAction("research_note"));
+elements.actionResearchComplete?.addEventListener("click", () => applyGuiAction("research_complete"));
 elements.actionMinutes?.addEventListener("click", () => applyGuiAction("minutes"));
 elements.actionReport?.addEventListener("click", () => applyGuiAction("report"));
 elements.actionSlides?.addEventListener("click", () => applyGuiAction("slides"));

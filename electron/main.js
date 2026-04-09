@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, ipcMain, screen, globalShortcut } = require("electron");
 const path = require("path");
 const { spawn, execFile } = require("child_process");
 const http = require("http");
@@ -17,6 +17,7 @@ let serverProcess = null;
 let monitorTimer = null;
 let cursorTimer = null;
 let cursorOverlayEnabled = false;
+let captureStatus = { ok: true, message: "클립보드 캡처 대기" };
 let hardwareInfo = {
   gpuLabel: "Unknown",
   gpuLoad: null,
@@ -138,6 +139,22 @@ async function runOperatorPreset(presetId) {
   await new Promise((resolve) => setTimeout(resolve, 160));
   await typeToFrontmostApp(preset.text, preset.submit !== false);
   return { preset: presetId, label: preset.label };
+}
+
+function captureScreenshotToClipboard() {
+  return new Promise((resolve, reject) => {
+    if (process.platform !== "darwin") {
+      reject(new Error("clipboard screenshot currently supports macOS only"));
+      return;
+    }
+    execFile("screencapture", ["-i", "-c"], (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr || error.message));
+        return;
+      }
+      resolve({ ok: true });
+    });
+  });
 }
 
 function requestJson(url, method = "GET", body = null, timeoutMs = 1500) {
@@ -398,6 +415,7 @@ async function fetchStats() {
     cpuCores: Array.isArray(load.cpus) ? load.cpus.map((item) => Math.round(item.load || 0)) : [],
     cursor: screen.getCursorScreenPoint(),
     cursorOverlayEnabled,
+    captureStatus,
     llm: Array.isArray(ollamaPs.models) && ollamaPs.models.length > 0
       ? {
           active: true,
@@ -496,6 +514,7 @@ function createTray() {
   const contextMenu = Menu.buildFromTemplate([
     { label: "Open hwp", click: () => mainWindow?.show() },
     { label: "Toggle System Monitor", click: () => toggleMonitorWindow() },
+    { label: "Clipboard Screenshot", click: () => ipcCaptureScreenshot() },
     { label: "Toggle Cursor Spotlight", click: () => toggleCursorOverlay() },
     { label: "Open Vision Lab", click: () => openVisionWindow() },
     { type: "separator" },
@@ -507,6 +526,18 @@ function createTray() {
   tray.on("click", () => toggleMonitorWindow());
 }
 
+async function ipcCaptureScreenshot() {
+  try {
+    captureStatus = { ok: true, message: "캡처 대기 중" };
+    await captureScreenshotToClipboard();
+    captureStatus = { ok: true, message: "클립보드에 캡처 완료" };
+  } catch (error) {
+    captureStatus = { ok: false, message: String(error.message || error) };
+    throw error;
+  }
+  return captureStatus;
+}
+
 async function bootstrap() {
   await startServer();
   await loadHardwareInfo();
@@ -515,6 +546,9 @@ async function bootstrap() {
   createVisionWindow();
   createCursorOverlayWindow();
   createTray();
+  globalShortcut.register("CommandOrControl+Shift+1", () => {
+    ipcCaptureScreenshot().catch(() => {});
+  });
   await updateMonitor();
   monitorTimer = setInterval(updateMonitor, 2000);
   cursorTimer = setInterval(updateCursorOverlayFrame, 33);
@@ -548,6 +582,11 @@ ipcMain.handle("cursor-overlay:state", async () => {
 
 ipcMain.handle("operator:run-preset", async (_event, presetId) => {
   const result = await runOperatorPreset(presetId);
+  return { ok: true, result };
+});
+
+ipcMain.handle("capture:screenshot", async () => {
+  const result = await ipcCaptureScreenshot();
   return { ok: true, result };
 });
 

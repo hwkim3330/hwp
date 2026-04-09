@@ -22,4 +22,7 @@ contextBridge.exposeInMainWorld("desktopMonitor", {
   runOperatorPreset(presetId) {
     return ipcRenderer.invoke("operator:run-preset", presetId);
   },
+  captureScreenshot() {
+    return ipcRenderer.invoke("capture:screenshot");
+  },
 });

@@ -322,6 +322,13 @@ input {
   color: var(--ink);
 }
 
+.session-link-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
 .registry-row span {
   display: block;
   margin-top: 5px;

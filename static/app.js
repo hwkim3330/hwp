@@ -57,6 +57,7 @@ const elements = {
   editorEngine: document.querySelector("#editor-engine"),
   openOnlyOffice: document.querySelector("#open-onlyoffice"),
   engineMeta: document.querySelector("#engine-meta"),
+  onlyofficeSessions: document.querySelector("#onlyoffice-sessions"),
   searchQuery: document.querySelector("#search-query"),
   runSearch: document.querySelector("#run-search"),
   searchResults: document.querySelector("#search-results"),
@@ -142,6 +143,53 @@ function setEngineMeta(message) {
   if (elements.engineMeta) {
     elements.engineMeta.textContent = message;
   }
+}
+
+function renderOnlyOfficeSessions(items) {
+  if (!elements.onlyofficeSessions) {
+    return;
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    elements.onlyofficeSessions.textContent = "아직 생성된 세션이 없습니다.";
+    return;
+  }
+  elements.onlyofficeSessions.innerHTML = items
+    .map(
+      (item) => `
+        <div class="session-event">
+          <strong>${escapeHtml(item.title || item.id)}</strong>
+          <span>${escapeHtml((item.extension || "").toUpperCase())} · ${escapeHtml(item.mode || "-")} · ${escapeHtml(formatSessionTime(item.created_at))}</span>
+          <code>${escapeHtml(item.share_url || "")}</code>
+          <div class="session-link-row">
+            <button class="secondary onlyoffice-open" data-url="${encodeURIComponent(item.launch_url || "")}">열기</button>
+            <button class="secondary onlyoffice-copy" data-url="${encodeURIComponent(item.share_url || "")}">링크 복사</button>
+          </div>
+        </div>
+      `,
+    )
+    .join("");
+  elements.onlyofficeSessions.querySelectorAll(".onlyoffice-open").forEach((button) => {
+    button.addEventListener("click", () => {
+      const url = decodeURIComponent(button.dataset.url || "");
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    });
+  });
+  elements.onlyofficeSessions.querySelectorAll(".onlyoffice-copy").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const url = decodeURIComponent(button.dataset.url || "");
+      if (!url) {
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        setEngineMeta(`공유 링크 복사 완료: ${url}`);
+      } catch (error) {
+        setEngineMeta(String(error.message || error));
+      }
+    });
+  });
 }
 
 async function refreshAgentHealth() {
@@ -294,6 +342,21 @@ async function refreshSessionLog() {
   } catch (error) {
     if (elements.sessionLog) {
       elements.sessionLog.textContent = String(error.message || error);
+    }
+  }
+}
+
+async function refreshOnlyOfficeSessions() {
+  try {
+    const response = await fetch("/api/onlyoffice/sessions", { cache: "no-store" });
+    const data = await response.json();
+    if (!data.ok) {
+      throw new Error("onlyoffice sessions unavailable");
+    }
+    renderOnlyOfficeSessions(data.sessions || []);
+  } catch (error) {
+    if (elements.onlyofficeSessions) {
+      elements.onlyofficeSessions.textContent = String(error.message || error);
     }
   }
 }
@@ -1366,6 +1429,7 @@ async function openOnlyOfficeSession() {
   window.open(result.launch_url, "_blank", "noopener,noreferrer");
   setEngineMeta(`ONLYOFFICE 세션 준비 완료: ${title}`);
   await refreshSessionLog();
+  await refreshOnlyOfficeSessions();
 }
 
 function resetSheetData() {
@@ -1859,6 +1923,7 @@ async function boot() {
   await refreshAgentHealth();
   await refreshRuntimeRegistry();
   await refreshSessionLog();
+  await refreshOnlyOfficeSessions();
   setMode(state.mode || "writer");
   setStatus(
     "준비 완료",

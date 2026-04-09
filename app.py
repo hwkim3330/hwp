@@ -160,6 +160,23 @@ def session_snapshot():
     }
 
 
+def list_onlyoffice_sessions():
+    items = []
+    for value in ONLYOFFICE_SESSIONS.values():
+      items.append(
+          {
+              "id": value["id"],
+              "title": value["title"],
+              "extension": value["extension"],
+              "mode": value["mode"],
+              "created_at": value["created_at"],
+              "launch_url": f"/onlyoffice.html?session={value['id']}",
+              "share_url": f"http://{HOST}:{PORT}/onlyoffice.html?session={value['id']}",
+          }
+      )
+    return sorted(items, key=lambda item: item["created_at"], reverse=True)
+
+
 def onlyoffice_doc_type(extension):
     return {
         "docx": "word",
@@ -1207,6 +1224,9 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/session":
             self._send_json({"ok": True, "session": session_snapshot()})
+            return
+        if self.path == "/api/onlyoffice/sessions":
+            self._send_json({"ok": True, "sessions": list_onlyoffice_sessions()})
             return
         if self.path.startswith("/api/onlyoffice/file/"):
             session_id = self.path.rsplit("/", 1)[-1]

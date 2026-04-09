@@ -899,6 +899,13 @@ button.secondary {
   gap: 10px;
 }
 
+.writer-paragraph-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .writer-paragraph-input {
   min-height: 110px;
   margin: 0;

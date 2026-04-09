@@ -124,6 +124,7 @@ const state = {
 
 const STORAGE_KEY = "hwp-state-v1";
 const MAX_COMMAND_HISTORY = 12;
+let writerEditorSyncTimer = 0;
 
 function installMeasureTextWidth() {
   let ctx = null;
@@ -1183,6 +1184,37 @@ function rebuildWriterFromParagraphItems(items) {
   const paragraphs = (items || []).map((item) => String(item || "").trim()).filter(Boolean);
   replaceWriterWithText(paragraphs.join("\n\n"));
   persistWorkspace();
+}
+
+function getWriterEditorValues() {
+  if (!elements.writerEditor) {
+    return [];
+  }
+  return [...elements.writerEditor.querySelectorAll(".writer-paragraph-input")].map((node) => node.value);
+}
+
+function moveListItem(items, fromIndex, toIndex) {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) {
+    return items;
+  }
+  const next = [...items];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  return next;
+}
+
+function syncWriterFromEditor(options = {}) {
+  const { rerenderEditor = false, status = "" } = options;
+  rebuildWriterFromParagraphItems(getWriterEditorValues());
+  const summary = getDocumentSummary();
+  updateMeta(summary);
+  renderPages();
+  if (rerenderEditor) {
+    renderWriterEditor(summary);
+  }
+  if (status) {
+    setStatus(status);
+  }
 }
 
 function appendWriterText(text) {
@@ -2384,29 +2416,69 @@ function renderWriterEditor(document) {
         <div class="writer-paragraph-card">
           <div class="writer-paragraph-head">
             <strong>문단 ${index + 1}</strong>
-            <button class="secondary writer-delete-paragraph" data-index="${index}">삭제</button>
+            <div class="writer-paragraph-actions">
+              <button class="secondary writer-move-up" data-index="${index}">위로</button>
+              <button class="secondary writer-move-down" data-index="${index}">아래로</button>
+              <button class="secondary writer-duplicate-paragraph" data-index="${index}">복제</button>
+              <button class="secondary writer-delete-paragraph" data-index="${index}">삭제</button>
+            </div>
           </div>
           <textarea class="writer-paragraph-input" data-index="${index}">${escapeHtml(item.text || "")}</textarea>
         </div>
       `,
     )
     .join("");
-  const sync = () => {
-    const values = [...elements.writerEditor.querySelectorAll(".writer-paragraph-input")].map((node) => node.value);
-    rebuildWriterFromParagraphItems(values);
-    refreshDocumentView();
-  };
   elements.writerEditor.querySelectorAll(".writer-paragraph-input").forEach((input) => {
-    input.addEventListener("change", sync);
+    input.addEventListener("input", () => {
+      window.clearTimeout(writerEditorSyncTimer);
+      writerEditorSyncTimer = window.setTimeout(() => {
+        syncWriterFromEditor();
+      }, 240);
+    });
+    input.addEventListener("change", () => {
+      window.clearTimeout(writerEditorSyncTimer);
+      syncWriterFromEditor();
+    });
   });
   elements.writerEditor.querySelectorAll(".writer-delete-paragraph").forEach((button) => {
     button.addEventListener("click", async () => {
       const targetIndex = Number(button.dataset.index || "-1");
-      const values = [...elements.writerEditor.querySelectorAll(".writer-paragraph-input")]
-        .map((node) => node.value)
+      const values = getWriterEditorValues()
         .filter((_, index) => index !== targetIndex);
       rebuildWriterFromParagraphItems(values);
       await refreshDocumentView();
+      setStatus("문단을 삭제했습니다.");
+    });
+  });
+  elements.writerEditor.querySelectorAll(".writer-duplicate-paragraph").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targetIndex = Number(button.dataset.index || "-1");
+      const values = getWriterEditorValues();
+      if (targetIndex < 0 || targetIndex >= values.length) {
+        return;
+      }
+      values.splice(targetIndex + 1, 0, values[targetIndex]);
+      rebuildWriterFromParagraphItems(values);
+      await refreshDocumentView();
+      setStatus("문단을 복제했습니다.");
+    });
+  });
+  elements.writerEditor.querySelectorAll(".writer-move-up").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targetIndex = Number(button.dataset.index || "-1");
+      const values = moveListItem(getWriterEditorValues(), targetIndex, targetIndex - 1);
+      rebuildWriterFromParagraphItems(values);
+      await refreshDocumentView();
+      setStatus("문단을 위로 이동했습니다.");
+    });
+  });
+  elements.writerEditor.querySelectorAll(".writer-move-down").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targetIndex = Number(button.dataset.index || "-1");
+      const values = moveListItem(getWriterEditorValues(), targetIndex, targetIndex + 1);
+      rebuildWriterFromParagraphItems(values);
+      await refreshDocumentView();
+      setStatus("문단을 아래로 이동했습니다.");
     });
   });
 }

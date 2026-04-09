@@ -70,8 +70,6 @@ const elements = {
   openOnlyOffice: document.querySelector("#open-onlyoffice"),
   engineMeta: document.querySelector("#engine-meta"),
   onlyofficeSessions: document.querySelector("#onlyoffice-sessions"),
-  computerUseGoal: document.querySelector("#computer-use-goal"),
-  planComputerUse: document.querySelector("#plan-computer-use"),
   computerUseRunNext: document.querySelector("#computer-use-run-next"),
   computerUseRunAll: document.querySelector("#computer-use-run-all"),
   computerUseProgressLabel: document.querySelector("#computer-use-progress-label"),
@@ -80,8 +78,6 @@ const elements = {
   computerUseMeta: document.querySelector("#computer-use-meta"),
   computerUsePlan: document.querySelector("#computer-use-plan"),
   computerUseSessions: document.querySelector("#computer-use-sessions"),
-  searchQuery: document.querySelector("#search-query"),
-  runSearch: document.querySelector("#run-search"),
   searchResults: document.querySelector("#search-results"),
   openBrowser: document.querySelector("#open-browser"),
   openFinder: document.querySelector("#open-finder"),
@@ -271,12 +267,13 @@ function renderOnlyOfficeSessions(items) {
 }
 
 function setComputerUsePresetGoal(goal) {
-  if (elements.computerUseGoal) {
-    elements.computerUseGoal.value = goal;
+  if (elements.promptInput) {
+    elements.promptInput.value = goal;
   }
   if (elements.computerUseMeta) {
     elements.computerUseMeta.textContent = `브라우저 목표 준비: ${goal}`;
   }
+  previewAgentRoute();
   setLiveRoute("computer_use", goal);
 }
 
@@ -676,9 +673,6 @@ async function runWebSearch(query) {
     renderSearchResults([]);
     return;
   }
-  if (elements.runSearch) {
-    elements.runSearch.disabled = true;
-  }
   if (elements.searchResults) {
     elements.searchResults.textContent = "검색 중...";
   }
@@ -693,9 +687,6 @@ async function runWebSearch(query) {
       throw new Error(result.detail || result.error || "search failed");
     }
     renderSearchResults(result.results || []);
-    if (elements.searchQuery) {
-      elements.searchQuery.value = input;
-    }
     setStatus("웹 검색 완료", `${(result.results || []).length}건 결과`);
     await refreshSessionLog();
   } catch (error) {
@@ -704,9 +695,6 @@ async function runWebSearch(query) {
     }
     setStatus("웹 검색 실패", String(error.message || error));
   } finally {
-    if (elements.runSearch) {
-      elements.runSearch.disabled = false;
-    }
   }
 }
 
@@ -738,15 +726,12 @@ async function runSystemAction(action, payload, successMessage = "시스템 액�
 }
 
 async function planComputerUse(goal, options = {}) {
-  const input = String(goal || elements.computerUseGoal?.value || elements.promptInput?.value || "").trim();
+  const input = String(goal || elements.promptInput?.value || "").trim();
   if (!input) {
     if (elements.computerUseMeta) {
       elements.computerUseMeta.textContent = "브라우저 목표를 입력해야 합니다.";
     }
     return;
-  }
-  if (elements.planComputerUse) {
-    elements.planComputerUse.disabled = true;
   }
   setLiveRoute("computer_use", input);
   if (elements.computerUseMeta) {
@@ -774,9 +759,6 @@ async function planComputerUse(goal, options = {}) {
       summary: result.plan.summary,
     };
     renderComputerUsePlan(state.currentComputerUsePlan);
-    if (elements.computerUseGoal) {
-      elements.computerUseGoal.value = input;
-    }
     if (elements.computerUseMeta) {
       elements.computerUseMeta.textContent = `브라우저 계획 생성 완료 · ${result.plan.meta?.planner || "-"} · ${result.plan.actions.length}단계`;
     }
@@ -797,9 +779,6 @@ async function planComputerUse(goal, options = {}) {
       elements.computerUsePlan.textContent = String(error.message || error);
     }
   } finally {
-    if (elements.planComputerUse) {
-      elements.planComputerUse.disabled = false;
-    }
   }
 }
 
@@ -2288,15 +2267,12 @@ async function runAgent() {
   const route = detectAgentRoute(prompt);
   setLiveRoute(route, prompt);
   if (route === "computer_use") {
-    if (elements.computerUseGoal && !elements.computerUseGoal.value.trim()) {
-      elements.computerUseGoal.value = prompt;
-    }
     await planComputerUse(prompt, { autorun: true });
     elements.reply.innerHTML = `<p>${escapeHtml("브라우저 작업으로 분기해 자동 진행을 시작했습니다.")}</p>`;
     return;
   }
   if (parsed.effects.search) {
-    await runWebSearch(elements.searchQuery?.value || prompt);
+    await runWebSearch(prompt);
   }
 
   if (!state.doc) {
@@ -2545,15 +2521,8 @@ elements.fileInput.addEventListener("change", async (event) => {
 });
 
 elements.runAgent.addEventListener("click", runAgent);
-elements.planComputerUse?.addEventListener("click", () => planComputerUse(elements.computerUseGoal?.value || elements.promptInput?.value));
 elements.computerUseRunNext?.addEventListener("click", runNextComputerUseStep);
 elements.computerUseRunAll?.addEventListener("click", runAllComputerUseSteps);
-elements.computerUseGoal?.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    planComputerUse(elements.computerUseGoal.value);
-  }
-});
 elements.promptInput?.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
@@ -2561,13 +2530,6 @@ elements.promptInput?.addEventListener("keydown", (event) => {
   }
 });
 elements.promptInput?.addEventListener("input", previewAgentRoute);
-elements.runSearch?.addEventListener("click", () => runWebSearch(elements.searchQuery?.value || elements.promptInput.value));
-elements.searchQuery?.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    runWebSearch(elements.searchQuery.value);
-  }
-});
 elements.openBrowser?.addEventListener("click", () =>
   runSystemAction("open_app", { app: "Safari" }, "브라우저를 열었습니다.").catch((error) =>
     setStatus("시스템 액션 실패", String(error.message || error)),
@@ -2589,9 +2551,7 @@ elements.promptChips
   .forEach((button) => {
   button.addEventListener("click", () => {
     elements.promptInput.value = button.dataset.prompt || "";
-    if (elements.searchQuery && !elements.searchQuery.value.trim()) {
-      elements.searchQuery.value = elements.promptInput.value;
-    }
+    previewAgentRoute();
   });
   });
 

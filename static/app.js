@@ -66,6 +66,11 @@ const elements = {
   onlyofficeSessions: document.querySelector("#onlyoffice-sessions"),
   computerUseGoal: document.querySelector("#computer-use-goal"),
   planComputerUse: document.querySelector("#plan-computer-use"),
+  computerUseRunNext: document.querySelector("#computer-use-run-next"),
+  computerUseRunAll: document.querySelector("#computer-use-run-all"),
+  computerUseProgressLabel: document.querySelector("#computer-use-progress-label"),
+  computerUseProgressMeta: document.querySelector("#computer-use-progress-meta"),
+  computerUseProgressBar: document.querySelector("#computer-use-progress-bar"),
   computerUseMeta: document.querySelector("#computer-use-meta"),
   computerUsePlan: document.querySelector("#computer-use-plan"),
   computerUseSessions: document.querySelector("#computer-use-sessions"),
@@ -91,6 +96,8 @@ const state = {
   sheetRows: [],
   slides: [],
   currentComputerUsePlan: null,
+  currentComputerUseSessionId: "",
+  computerUseBusy: false,
 };
 
 const STORAGE_KEY = "hwp-state-v1";
@@ -229,38 +236,76 @@ function formatComputerUseAction(action) {
   return action.text || "";
 }
 
-function renderComputerUsePlan(sessionId, plan) {
+function summarizeComputerUseProgress(session) {
+  const total = Array.isArray(session?.actions) ? session.actions.length : Array.isArray(session?.plan?.actions) ? session.plan.actions.length : 0;
+  const done = Number(session?.executed_steps ?? session?.history?.length ?? 0);
+  const currentIndex = done < total ? done : Math.max(total - 1, 0);
+  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+  return { total, done, currentIndex, percent };
+}
+
+function setComputerUseProgress(session) {
+  const progress = summarizeComputerUseProgress(session);
+  if (elements.computerUseProgressLabel) {
+    elements.computerUseProgressLabel.textContent =
+      progress.total > 0 ? `${progress.done}/${progress.total} 단계 완료` : "대기 중";
+  }
+  if (elements.computerUseProgressMeta) {
+    const status = session?.status ? `상태 ${session.status}` : "브라우저 작업 전";
+    elements.computerUseProgressMeta.textContent =
+      progress.total > 0 ? `${status} · 다음 단계 ${Math.min(progress.done + 1, progress.total)}` : "계획을 만들면 진행률과 다음 단계가 여기에 표시됩니다.";
+  }
+  if (elements.computerUseProgressBar) {
+    elements.computerUseProgressBar.style.width = `${progress.percent}%`;
+  }
+  if (elements.computerUseRunNext) {
+    elements.computerUseRunNext.disabled = state.computerUseBusy || progress.total === 0 || progress.done >= progress.total;
+  }
+  if (elements.computerUseRunAll) {
+    elements.computerUseRunAll.disabled = state.computerUseBusy || progress.total === 0 || progress.done >= progress.total;
+  }
+}
+
+function renderComputerUsePlan(session) {
   if (!elements.computerUsePlan) {
     return;
   }
+  const plan = session?.plan || session;
+  const sessionId = session?.id || state.currentComputerUseSessionId;
   if (!plan || !Array.isArray(plan.actions) || plan.actions.length === 0) {
     elements.computerUsePlan.textContent = "아직 생성된 브라우저 계획이 없습니다.";
+    setComputerUseProgress(null);
     return;
   }
+  const progress = summarizeComputerUseProgress({
+    actions: plan.actions,
+    executed_steps: session?.executed_steps ?? 0,
+    status: session?.status,
+  });
   elements.computerUsePlan.innerHTML = `
     <div class="session-event">
       <strong>${escapeHtml(plan.summary || "브라우저 작업 계획")}</strong>
       <span>${escapeHtml(plan.reply || "")}</span>
-      <code>${escapeHtml(`세션 ${sessionId} · ${plan.meta?.planner || "-"}`)}</code>
+      <code>${escapeHtml(`세션 ${sessionId} · ${plan.meta?.planner || session?.status || "-"}`)}</code>
     </div>
     ${plan.actions
       .map(
         (action, index) => `
-          <div class="search-result">
-            <strong>${index + 1}. ${escapeHtml(action.label || action.type || "step")}</strong>
-            <span>${escapeHtml(formatComputerUseAction(action))}</span>
-            <div class="button-row">
-              <button class="secondary computer-use-run" data-session-id="${escapeHtml(sessionId)}" data-step-index="${index}">실행</button>
+          <div class="computer-step${index < progress.done ? " is-done" : ""}${index === progress.currentIndex && progress.done < progress.total ? " is-current" : ""}">
+            <div class="computer-step-top">
+              <span class="computer-step-index">${index + 1}</span>
+              <span class="computer-step-label">${escapeHtml(action.label || action.type || "step")}</span>
             </div>
+            <div class="computer-step-meta">${escapeHtml(formatComputerUseAction(action))}</div>
           </div>
         `,
       )
       .join("")}
   `;
-  elements.computerUsePlan.querySelectorAll(".computer-use-run").forEach((button) => {
-    button.addEventListener("click", async () => {
-      await runComputerUseStep(button.dataset.sessionId || "", Number(button.dataset.stepIndex || "-1"));
-    });
+  setComputerUseProgress({
+    actions: plan.actions,
+    executed_steps: session?.executed_steps ?? 0,
+    status: session?.status,
   });
 }
 
@@ -272,7 +317,13 @@ function renderComputerUseSessions(items) {
     elements.computerUseSessions.textContent = "아직 브라우저 세션이 없습니다.";
     return;
   }
-  elements.computerUseSessions.innerHTML = items
+  const latest = items[0];
+  if (latest) {
+    state.currentComputerUseSessionId = latest.id || "";
+    state.currentComputerUsePlan = latest;
+    renderComputerUsePlan(latest);
+  }
+  elements.computerUseSessions.innerHTML = items.slice(0, 4)
     .map(
       (item) => `
         <div class="session-event">
@@ -280,8 +331,7 @@ function renderComputerUseSessions(items) {
           <span>${escapeHtml(item.status || "planned")} · 실행 ${escapeHtml(String(item.executed_steps || 0))}회 · ${escapeHtml(formatSessionTime(item.created_at))}</span>
           <code>${escapeHtml(item.summary || "")}</code>
           <div class="session-link-row">
-            <button class="secondary computer-use-resume" data-session-id="${escapeHtml(item.id)}">계획 보기</button>
-            <button class="secondary computer-use-step" data-session-id="${escapeHtml(item.id)}" data-step-index="0">1단계 실행</button>
+            <button class="secondary computer-use-resume" data-session-id="${escapeHtml(item.id)}">불러오기</button>
           </div>
         </div>
       `,
@@ -291,13 +341,13 @@ function renderComputerUseSessions(items) {
     button.addEventListener("click", () => {
       const session = items.find((item) => item.id === (button.dataset.sessionId || ""));
       if (session) {
-        renderComputerUsePlan(session.id, { summary: session.summary, reply: session.goal, actions: session.actions, meta: { planner: session.status } });
+        state.currentComputerUseSessionId = session.id;
+        state.currentComputerUsePlan = session;
+        renderComputerUsePlan(session);
+        if (elements.computerUseMeta) {
+          elements.computerUseMeta.textContent = `세션 불러옴 · ${session.goal}`;
+        }
       }
-    });
-  });
-  elements.computerUseSessions.querySelectorAll(".computer-use-step").forEach((button) => {
-    button.addEventListener("click", async () => {
-      await runComputerUseStep(button.dataset.sessionId || "", Number(button.dataset.stepIndex || "-1"));
     });
   });
 }
@@ -610,13 +660,22 @@ async function planComputerUse(goal) {
     if (!result.ok) {
       throw new Error(result.detail || result.error || "computer use plan failed");
     }
-    state.currentComputerUsePlan = { sessionId: result.session_id, plan: result.plan };
-    renderComputerUsePlan(result.session_id, result.plan);
+    state.currentComputerUseSessionId = result.session_id;
+    state.currentComputerUsePlan = {
+      id: result.session_id,
+      status: "planned",
+      executed_steps: 0,
+      goal: input,
+      plan: result.plan,
+      actions: result.plan.actions,
+      summary: result.plan.summary,
+    };
+    renderComputerUsePlan(state.currentComputerUsePlan);
     if (elements.computerUseGoal) {
       elements.computerUseGoal.value = input;
     }
     if (elements.computerUseMeta) {
-      elements.computerUseMeta.textContent = `브라우저 계획 생성 완료 · ${result.plan.meta?.planner || "-"}`;
+      elements.computerUseMeta.textContent = `브라우저 계획 생성 완료 · ${result.plan.meta?.planner || "-"} · ${result.plan.actions.length}단계`;
     }
     setWorkflowHint(`브라우저 작업 계획 생성: ${input}`);
     await refreshComputerUseSessions();
@@ -637,10 +696,21 @@ async function planComputerUse(goal) {
   }
 }
 
+function getNextComputerUseStepIndex() {
+  const session = state.currentComputerUsePlan;
+  if (!session) {
+    return -1;
+  }
+  const progress = summarizeComputerUseProgress(session);
+  return progress.done < progress.total ? progress.done : -1;
+}
+
 async function runComputerUseStep(sessionId, stepIndex) {
   if (!sessionId || stepIndex < 0) {
     return;
   }
+  state.computerUseBusy = true;
+  setComputerUseProgress(state.currentComputerUsePlan);
   if (elements.computerUseMeta) {
     elements.computerUseMeta.textContent = `브라우저 단계 실행 중... 세션 ${sessionId} / 단계 ${stepIndex + 1}`;
   }
@@ -655,6 +725,11 @@ async function runComputerUseStep(sessionId, stepIndex) {
       throw new Error(result.detail || result.error || "computer use run failed");
     }
     const detail = result.result?.action?.label || result.result?.action?.type || "step";
+    if (state.currentComputerUsePlan && state.currentComputerUseSessionId === sessionId) {
+      state.currentComputerUsePlan.executed_steps = Math.max(Number(state.currentComputerUsePlan.executed_steps || 0), stepIndex + 1);
+      state.currentComputerUsePlan.status = result.result?.action?.type === "note" ? "review" : "running";
+      renderComputerUsePlan(state.currentComputerUsePlan);
+    }
     if (elements.computerUseMeta) {
       elements.computerUseMeta.textContent = `실행 완료: ${detail}`;
     }
@@ -666,6 +741,39 @@ async function runComputerUseStep(sessionId, stepIndex) {
     if (elements.computerUseMeta) {
       elements.computerUseMeta.textContent = String(error.message || error);
     }
+  } finally {
+    state.computerUseBusy = false;
+    setComputerUseProgress(state.currentComputerUsePlan);
+  }
+}
+
+async function runNextComputerUseStep() {
+  const sessionId = state.currentComputerUseSessionId;
+  const stepIndex = getNextComputerUseStepIndex();
+  if (!sessionId || stepIndex < 0) {
+    if (elements.computerUseMeta) {
+      elements.computerUseMeta.textContent = "실행할 다음 단계가 없습니다.";
+    }
+    return;
+  }
+  await runComputerUseStep(sessionId, stepIndex);
+}
+
+async function runAllComputerUseSteps() {
+  if (state.computerUseBusy) {
+    return;
+  }
+  while (true) {
+    const sessionId = state.currentComputerUseSessionId;
+    const stepIndex = getNextComputerUseStepIndex();
+    if (!sessionId || stepIndex < 0) {
+      break;
+    }
+    await runComputerUseStep(sessionId, stepIndex);
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
+  }
+  if (elements.computerUseMeta) {
+    elements.computerUseMeta.textContent = "자동 진행 완료";
   }
 }
 
@@ -2308,6 +2416,8 @@ elements.fileInput.addEventListener("change", async (event) => {
 
 elements.runAgent.addEventListener("click", runAgent);
 elements.planComputerUse?.addEventListener("click", () => planComputerUse(elements.computerUseGoal?.value || elements.promptInput?.value));
+elements.computerUseRunNext?.addEventListener("click", runNextComputerUseStep);
+elements.computerUseRunAll?.addEventListener("click", runAllComputerUseSteps);
 elements.computerUseGoal?.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();

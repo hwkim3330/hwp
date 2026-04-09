@@ -248,6 +248,103 @@ input {
   border-radius: 14px;
 }
 
+.computer-use-hero {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 252, 247, 0.96), rgba(243, 235, 223, 0.92)),
+    linear-gradient(135deg, rgba(20, 76, 101, 0.05), rgba(47, 122, 99, 0.06));
+  border: 1px solid var(--line);
+}
+
+.computer-use-headline {
+  display: grid;
+  gap: 4px;
+}
+
+.computer-use-headline strong {
+  font-size: 16px;
+}
+
+.computer-use-headline span {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.progress-track {
+  width: 100%;
+  height: 12px;
+  margin: 12px 0;
+  border-radius: 999px;
+  background: rgba(20, 76, 101, 0.12);
+  overflow: hidden;
+}
+
+.progress-bar {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-3));
+  transition: width 180ms ease;
+}
+
+.compact-sessions {
+  max-height: 200px;
+  overflow: auto;
+}
+
+.computer-step {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+}
+
+.computer-step.is-done {
+  border-color: rgba(47, 122, 99, 0.28);
+  background: rgba(47, 122, 99, 0.08);
+}
+
+.computer-step.is-current {
+  border-color: rgba(20, 76, 101, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(20, 76, 101, 0.08);
+}
+
+.computer-step-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.computer-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(20, 76, 101, 0.1);
+  color: var(--accent);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+}
+
+.computer-step-label {
+  font-weight: 600;
+}
+
+.computer-step-meta {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .control-toggle,
 .control-select {
   display: inline-flex;

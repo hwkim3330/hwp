@@ -54,6 +54,9 @@ const elements = {
   searchEnabled: document.querySelector("#search-enabled"),
   modelProfile: document.querySelector("#model-profile"),
   workflowHint: document.querySelector("#workflow-hint"),
+  editorEngine: document.querySelector("#editor-engine"),
+  openOnlyOffice: document.querySelector("#open-onlyoffice"),
+  engineMeta: document.querySelector("#engine-meta"),
   searchQuery: document.querySelector("#search-query"),
   runSearch: document.querySelector("#run-search"),
   searchResults: document.querySelector("#search-results"),
@@ -135,6 +138,12 @@ function setWorkflowHint(message) {
   }
 }
 
+function setEngineMeta(message) {
+  if (elements.engineMeta) {
+    elements.engineMeta.textContent = message;
+  }
+}
+
 async function refreshAgentHealth() {
   try {
     const response = await fetch("/healthz", { cache: "no-store" });
@@ -151,12 +160,14 @@ async function refreshAgentHealth() {
       elements.capHwpforge.textContent = "offline";
       elements.capHwpforgeMeta.textContent = health.hwpforge?.detail || "hwpforge unavailable";
     }
+    setEngineMeta(`ONLYOFFICE Docs: ${health.onlyoffice?.docsUrl || "http://127.0.0.1:8080"} | active sessions ${health.onlyoffice?.sessions ?? 0}`);
     setRuntimeBadge(health.hwpforge?.available ? "Local Ops Ready" : "Partial Local Mode");
   } catch (error) {
     elements.capLlm.textContent = "offline";
     elements.capLlmMeta.textContent = "health check failed";
     elements.capHwpforge.textContent = "unknown";
     elements.capHwpforgeMeta.textContent = String(error.message || error);
+    setEngineMeta(String(error.message || error));
     setRuntimeBadge("Offline");
   }
 }
@@ -833,7 +844,7 @@ function toIsoDate(value = new Date()) {
   return value.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-async function exportDocx() {
+async function buildDocxBytes() {
   const summary = getDocumentSummary();
   const paragraphs = summary.paragraphs
     .map((item) => String(item.text || "").trim())
@@ -902,7 +913,11 @@ async function exportDocx() {
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`,
   );
-  const bytes = await zip.generateAsync({ type: "uint8array" });
+  return zip.generateAsync({ type: "uint8array" });
+}
+
+async function exportDocx() {
+  const bytes = await buildDocxBytes();
   downloadBytes(bytes, toDocxFileName(state.fileName || "office-agent-document"));
 }
 
@@ -917,7 +932,7 @@ function xlsxColumnName(index) {
   return result;
 }
 
-async function exportXlsx() {
+async function buildXlsxBytes() {
   const zip = new JSZip();
   const rows = [
     state.sheetColumns,
@@ -1007,11 +1022,15 @@ async function exportXlsx() {
   <sheetData>${sheetRowsXml}</sheetData>
 </worksheet>`,
   );
-  const bytes = await zip.generateAsync({ type: "uint8array" });
+  return zip.generateAsync({ type: "uint8array" });
+}
+
+async function exportXlsx() {
+  const bytes = await buildXlsxBytes();
   downloadBytes(bytes, toXlsxFileName(state.fileName || "office-agent-sheet"));
 }
 
-async function exportPptx() {
+async function buildPptxBytes() {
   const slides = state.slides.length > 0 ? state.slides : [{ title: "슬라이드 1", bullets: [] }];
   const zip = new JSZip();
   const created = toIsoDate();
@@ -1202,7 +1221,11 @@ async function exportPptx() {
 </Relationships>`,
     );
   });
-  const bytes = await zip.generateAsync({ type: "uint8array" });
+  return zip.generateAsync({ type: "uint8array" });
+}
+
+async function exportPptx() {
+  const bytes = await buildPptxBytes();
   downloadBytes(bytes, toPptxFileName(state.fileName || "office-agent-slides"));
 }
 
@@ -1293,6 +1316,56 @@ function downloadBytes(bytes, fileName) {
   link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+async function openOnlyOfficeSession() {
+  let extension = "";
+  let title = state.fileName || "document";
+  let bytes = null;
+
+  if (state.mode === "writer") {
+    extension = "docx";
+    title = toDocxFileName(title || "hwp-document");
+    bytes = await buildDocxBytes();
+  } else if (state.mode === "sheet") {
+    extension = "xlsx";
+    title = toXlsxFileName(title || "hwp-sheet");
+    bytes = await buildXlsxBytes();
+  } else if (state.mode === "slides") {
+    extension = "pptx";
+    title = toPptxFileName(title || "hwp-slides");
+    bytes = await buildPptxBytes();
+  } else {
+    throw new Error("ONLYOFFICE는 Writer, Sheet, Slides에서만 사용합니다.");
+  }
+
+  const response = await fetch("/api/onlyoffice/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      mode: state.mode,
+      title,
+      extension,
+      content_base64: bytesToBase64(bytes),
+    }),
+  });
+  const result = await response.json();
+  if (!result.ok) {
+    throw new Error(result.detail || result.error || "onlyoffice launch failed");
+  }
+  window.open(result.launch_url, "_blank", "noopener,noreferrer");
+  setEngineMeta(`ONLYOFFICE 세션 준비 완료: ${title}`);
+  await refreshSessionLog();
 }
 
 function resetSheetData() {
@@ -1794,6 +1867,9 @@ async function boot() {
   setBadge("준비 완료");
   setRuntimeBadge("Command Ready");
   setWorkflowHint("문서 작업 버튼, 검색 포함 토글, 모델 프로필을 조합해 실행합니다.");
+  if (elements.editorEngine) {
+    elements.editorEngine.value = "native";
+  }
 }
 
 function applyGuiAction(kind) {
@@ -1959,6 +2035,25 @@ elements.actionResearchNote?.addEventListener("click", () => applyGuiAction("res
 elements.actionMinutes?.addEventListener("click", () => applyGuiAction("minutes"));
 elements.actionReport?.addEventListener("click", () => applyGuiAction("report"));
 elements.actionSlides?.addEventListener("click", () => applyGuiAction("slides"));
+elements.editorEngine?.addEventListener("change", () => {
+  setEngineMeta(
+    elements.editorEngine.value === "onlyoffice"
+      ? "ONLYOFFICE를 선택했습니다. 새 창에서 OOXML 편집 세션을 엽니다."
+      : "Native 편집 엔진을 사용합니다. HWP/HWPX와 로컬 워크스페이스를 직접 다룹니다.",
+  );
+});
+elements.openOnlyOffice?.addEventListener("click", async () => {
+  try {
+    if (elements.editorEngine?.value !== "onlyoffice") {
+      elements.editorEngine.value = "onlyoffice";
+    }
+    await openOnlyOfficeSession();
+    setStatus("ONLYOFFICE 세션을 열었습니다.");
+  } catch (error) {
+    setStatus("ONLYOFFICE 실행 실패", String(error.message || error));
+    setEngineMeta(String(error.message || error));
+  }
+});
 
 boot().catch((error) => {
   setBadge("실패");

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>hwp x ONLYOFFICE</title>
+    <style>
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: #f6efe5;
+        color: #241b16;
+        font-family: "IBM Plex Sans KR", "Apple SD Gothic Neo", sans-serif;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        height: 100%;
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        background: rgba(255,255,255,0.82);
+        border-bottom: 1px solid rgba(63, 45, 27, 0.12);
+      }
+
+      .meta {
+        font-size: 13px;
+        color: #6d6358;
+      }
+
+      #editor {
+        width: 100%;
+        height: 100%;
+      }
+
+      .empty {
+        display: grid;
+        place-items: center;
+        height: 100%;
+        color: #6d6358;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="topbar">
+        <div>
+          <strong>ONLYOFFICE Session</strong>
+          <div id="session-meta" class="meta">세션 로딩 중...</div>
+        </div>
+        <div id="docs-meta" class="meta">문서 서버 확인 중...</div>
+      </div>
+      <div id="editor">
+        <div class="empty">세션 준비 중...</div>
+      </div>
+    </div>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const sessionId = params.get("session");
+      const sessionMeta = document.getElementById("session-meta");
+      const docsMeta = document.getElementById("docs-meta");
+
+      async function boot() {
+        if (!sessionId) {
+          sessionMeta.textContent = "세션 ID가 없습니다.";
+          return;
+        }
+        const response = await fetch(`/api/onlyoffice/config/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+        const data = await response.json();
+        if (!data.ok) {
+          sessionMeta.textContent = data.detail || data.error || "세션 로드 실패";
+          return;
+        }
+        const session = data.session;
+        sessionMeta.textContent = `${session.title} · ${session.extension.toUpperCase()} · ${session.mode}`;
+        docsMeta.textContent = session.docs_url || "docs url unavailable";
+
+        const docsUrl = `${session.docs_url}/web-apps/apps/api/documents/api.js`;
+        const script = document.createElement("script");
+        script.src = docsUrl;
+        script.onload = () => {
+          docsMeta.textContent = docsUrl;
+          if (!window.DocsAPI?.DocEditor) {
+            sessionMeta.textContent = "ONLYOFFICE Docs API를 찾지 못했습니다.";
+            return;
+          }
+          new window.DocsAPI.DocEditor("editor", session.config);
+        };
+        script.onerror = () => {
+          sessionMeta.textContent = "ONLYOFFICE 서버 스크립트를 불러오지 못했습니다. 127.0.0.1:8080을 확인하세요.";
+        };
+        document.body.append(script);
+      }
+
+      boot().catch((error) => {
+        sessionMeta.textContent = String(error.message || error);
+      });
+    </script>
+  </body>
+</html>

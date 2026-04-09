@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 
+import base64
 import json
+import mimetypes
 import os
 import re
 import shutil
 import subprocess
 import time
+import uuid
 from html.parser import HTMLParser
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -16,6 +19,7 @@ from urllib import error, request
 
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
+ONLYOFFICE_RUNTIME_DIR = ROOT / ".runtime" / "onlyoffice"
 HOST = os.environ.get("OFFICE_AGENT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("OFFICE_AGENT_PORT", "8765"))
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:11434/v1").rstrip("/")
@@ -28,10 +32,12 @@ ENABLE_WEB_SEARCH = os.environ.get("ENABLE_WEB_SEARCH", "1") != "0"
 ENABLE_VISION_EXPERIMENTS = os.environ.get("ENABLE_VISION_EXPERIMENTS", "1") != "0"
 ENABLE_SYSTEM_ACTIONS = os.environ.get("ENABLE_SYSTEM_ACTIONS", "1") != "0"
 ENABLE_FILE_AUTOMATION = os.environ.get("ENABLE_FILE_AUTOMATION", "1") != "0"
+ONLYOFFICE_DOCS_URL = os.environ.get("ONLYOFFICE_DOCS_URL", "http://127.0.0.1:8080").rstrip("/")
 USER_AGENT = "hwp/1.0 (+https://github.com/hwkim3330/hwp)"
 SESSION_ID = f"session-{int(time.time())}"
 SESSION_EVENTS = []
 MAX_SESSION_EVENTS = 120
+ONLYOFFICE_SESSIONS = {}
 
 
 SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
@@ -152,6 +158,62 @@ def session_snapshot():
         "id": SESSION_ID,
         "events": SESSION_EVENTS[-60:],
     }
+
+
+def onlyoffice_doc_type(extension):
+    return {
+        "docx": "word",
+        "xlsx": "cell",
+        "pptx": "slide",
+    }.get(extension, "word")
+
+
+def onlyoffice_mime_type(extension):
+    return {
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    }.get(extension, mimetypes.guess_type(f"file.{extension}")[0] or "application/octet-stream")
+
+
+def create_onlyoffice_session(title, extension, content_base64, mode):
+    ONLYOFFICE_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    session_id = uuid.uuid4().hex
+    file_name = f"{session_id}.{extension}"
+    file_path = ONLYOFFICE_RUNTIME_DIR / file_name
+    file_path.write_bytes(base64.b64decode(content_base64.encode("utf-8")))
+    file_url = f"http://{HOST}:{PORT}/api/onlyoffice/file/{session_id}"
+    config = {
+        "document": {
+            "fileType": extension,
+            "key": session_id,
+            "title": title,
+            "url": file_url,
+        },
+        "documentType": onlyoffice_doc_type(extension),
+        "editorConfig": {
+            "mode": "edit",
+            "callbackUrl": f"http://{HOST}:{PORT}/api/onlyoffice/callback?file_id={session_id}",
+            "customization": {
+                "autosave": True,
+                "forcesave": True,
+                "compactHeader": False,
+                "toolbarNoTabs": False,
+            },
+        },
+    }
+    ONLYOFFICE_SESSIONS[session_id] = {
+        "id": session_id,
+        "title": title,
+        "extension": extension,
+        "mode": mode,
+        "docs_url": ONLYOFFICE_DOCS_URL,
+        "file_path": str(file_path),
+        "config": config,
+        "created_at": int(time.time()),
+    }
+    log_session_event("onlyoffice_session", {"id": session_id, "title": title, "extension": extension, "mode": mode})
+    return session_id
 
 
 def compact_document(document):
@@ -1076,6 +1138,13 @@ def tool_registry():
             "status": "disabled" if not ENABLE_SYSTEM_ACTIONS else "experimental",
             "detail": "권한 게이트 뒤 open_url / reveal_path / open_app 실행",
         },
+        {
+            "id": "onlyoffice_bridge",
+            "label": "ONLYOFFICE Bridge",
+            "category": "documents",
+            "status": "ready",
+            "detail": f"OOXML 편집 세션 브리지 via {ONLYOFFICE_DOCS_URL}",
+        },
     ]
 
 
@@ -1083,6 +1152,7 @@ def runtime_registry():
     return {
         "session": {"id": SESSION_ID, "eventCount": len(SESSION_EVENTS)},
         "llm": {"model": LLM_MODEL, "baseUrl": LLM_BASE_URL, "ollama": is_ollama_base_url()},
+        "onlyoffice": {"docsUrl": ONLYOFFICE_DOCS_URL, "sessions": len(ONLYOFFICE_SESSIONS)},
         "permissions": permission_registry(),
         "tools": tool_registry(),
     }
@@ -1128,6 +1198,7 @@ class Handler(SimpleHTTPRequestHandler):
                     "baseUrl": LLM_BASE_URL,
                     "planner": "llm+fallback",
                     "hwpforge": hwpforge_status(),
+                    "onlyoffice": {"docsUrl": ONLYOFFICE_DOCS_URL, "sessions": len(ONLYOFFICE_SESSIONS)},
                 }
             )
             return
@@ -1136,6 +1207,32 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/session":
             self._send_json({"ok": True, "session": session_snapshot()})
+            return
+        if self.path.startswith("/api/onlyoffice/file/"):
+            session_id = self.path.rsplit("/", 1)[-1]
+            item = ONLYOFFICE_SESSIONS.get(session_id)
+            if not item:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            file_path = Path(item["file_path"])
+            if not file_path.is_file():
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            raw = file_path.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", onlyoffice_mime_type(item["extension"]))
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if self.path.startswith("/api/onlyoffice/config/"):
+            session_id = self.path.rsplit("/", 1)[-1]
+            item = ONLYOFFICE_SESSIONS.get(session_id)
+            if not item:
+                self._send_json({"ok": False, "error": "session_not_found"}, status=HTTPStatus.NOT_FOUND)
+                return
+            self._send_json({"ok": True, "session": item})
             return
         if self.path == "/":
             self.path = "/index.html"
@@ -1155,6 +1252,43 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": True, "results": results})
             except Exception as exc:
                 self._send_json({"ok": False, "error": "search_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/onlyoffice/config":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(body or "{}")
+                title = str(payload.get("title", "untitled")).strip() or "untitled"
+                extension = str(payload.get("extension", "")).strip().lower()
+                content_base64 = str(payload.get("content_base64", "")).strip()
+                mode = str(payload.get("mode", "writer")).strip()
+                if extension not in {"docx", "xlsx", "pptx"}:
+                    raise ValueError("unsupported extension")
+                if not content_base64:
+                    raise ValueError("content_base64 is required")
+                session_id = create_onlyoffice_session(title, extension, content_base64, mode)
+                self._send_json(
+                    {
+                        "ok": True,
+                        "session_id": session_id,
+                        "launch_url": f"/onlyoffice.html?session={session_id}",
+                        "docs_url": ONLYOFFICE_DOCS_URL,
+                    }
+                )
+            except Exception as exc:
+                self._send_json({"ok": False, "error": "onlyoffice_config_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if self.path.startswith("/api/onlyoffice/callback"):
+            try:
+                query = parse_qs(urlparse(self.path).query)
+                session_id = (query.get("file_id") or [""])[0]
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(body or "{}")
+                log_session_event("onlyoffice_callback", {"id": session_id, "status": payload.get("status"), "payload": payload})
+                self._send_json({"error": 0})
+            except Exception as exc:
+                self._send_json({"error": 1, "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         if self.path == "/api/system-action":
             try:

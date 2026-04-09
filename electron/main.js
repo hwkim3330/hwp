@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Menu, Tray, nativeImage, shell, ipcMain, screen } = require("electron");
 const path = require("path");
-const { spawn } = require("child_process");
+const { spawn, execFile } = require("child_process");
 const http = require("http");
 const si = require("systeminformation");
 
@@ -23,6 +23,28 @@ let hardwareInfo = {
   npuLabel: "Unavailable",
 };
 let previousSample = null;
+const OPERATOR_PRESETS = {
+  claude_fast: {
+    label: "Claude Fast",
+    text: "설명은 줄이고 바로 실행해. 필요한 수정만 적용하고 마지막에 검증 결과만 짧게 남겨.",
+    submit: true,
+  },
+  codex_fast: {
+    label: "Codex Fast",
+    text: "분석은 짧게 하고 바로 구현해. 테스트나 검증까지 끝내고 핵심만 보고해.",
+    submit: true,
+  },
+  hwp_manager: {
+    label: "hwp Manager",
+    text: "문서 초안을 구조화 블록 우선으로 만들고, 필요하면 검색 결과를 참고 링크와 함께 정리해.",
+    submit: true,
+  },
+  continue_work: {
+    label: "Continue",
+    text: "중단한 작업 이어서 진행해. 불필요한 설명 없이 바로 처리해.",
+    submit: true,
+  },
+};
 
 function getVirtualDisplayBounds() {
   const displays = screen.getAllDisplays();
@@ -59,6 +81,63 @@ function createTrayImage() {
   const image = nativeImage.createEmpty();
   image.setTemplateImage(true);
   return image;
+}
+
+function runAppleScript(script) {
+  return new Promise((resolve, reject) => {
+    execFile("osascript", ["-e", script], (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr || error.message));
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
+
+function refocusPreviousApp() {
+  const script = [
+    'tell application "System Events"',
+    "  key down command",
+    "  key code 48",
+    "  key up command",
+    "end tell",
+  ].join("\n");
+  return runAppleScript(script);
+}
+
+function escapeAppleScriptText(value) {
+  return String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+function typeToFrontmostApp(text, submit = true) {
+  const lines = [
+    'tell application "System Events"',
+    `  keystroke "${escapeAppleScriptText(text)}"`,
+  ];
+  if (submit) {
+    lines.push("  key code 36");
+  }
+  lines.push("end tell");
+  return runAppleScript(lines.join("\n"));
+}
+
+async function runOperatorPreset(presetId) {
+  const preset = OPERATOR_PRESETS[presetId];
+  if (!preset) {
+    throw new Error(`unknown preset: ${presetId}`);
+  }
+  if (process.platform !== "darwin") {
+    throw new Error("operator presets currently support macOS only");
+  }
+  if (monitorWindow && !monitorWindow.isDestroyed()) {
+    monitorWindow.hide();
+  }
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  await refocusPreviousApp();
+  await new Promise((resolve) => setTimeout(resolve, 160));
+  await typeToFrontmostApp(preset.text, preset.submit !== false);
+  return { preset: presetId, label: preset.label };
 }
 
 function requestJson(url, method = "GET", body = null, timeoutMs = 1500) {
@@ -465,6 +544,11 @@ ipcMain.handle("cursor-overlay:toggle", async (_event, forceState) => {
 
 ipcMain.handle("cursor-overlay:state", async () => {
   return { ok: true, enabled: cursorOverlayEnabled };
+});
+
+ipcMain.handle("operator:run-preset", async (_event, presetId) => {
+  const result = await runOperatorPreset(presetId);
+  return { ok: true, result };
 });
 
 app.whenReady().then(async () => {

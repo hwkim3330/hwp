@@ -226,6 +226,31 @@
         color: var(--muted);
       }
 
+      .preset-grid {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .preset-button {
+        border: 0;
+        border-radius: 14px;
+        padding: 10px 12px;
+        background: linear-gradient(180deg, #2e241f, #1e1713);
+        color: #fff7ee;
+        font: inherit;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .preset-meta {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
       @keyframes bob {
         0%,
         100% { transform: translateY(0) rotate(0deg); }
@@ -313,6 +338,17 @@
             <div id="cursor-state" class="control-state">현재 꺼짐</div>
           </div>
         </article>
+
+        <article class="card wide">
+          <div class="label">Operator Presets</div>
+          <div class="preset-grid">
+            <button class="preset-button" data-preset="claude_fast" type="button">Claude Fast</button>
+            <button class="preset-button" data-preset="codex_fast" type="button">Codex Fast</button>
+            <button class="preset-button" data-preset="hwp_manager" type="button">hwp Manager</button>
+            <button class="preset-button" data-preset="continue_work" type="button">Continue</button>
+          </div>
+          <div id="preset-meta" class="preset-meta">현재 직전에 쓰던 앱으로 돌아가 프리셋 문구를 입력합니다.</div>
+        </article>
       </section>
 
       <div class="footer">가능한 수치만 안정적으로 표시합니다. GPU 실시간 퍼센트와 ANE 사용률은 현재 공개 경로 기준 제한이 있습니다.</div>
@@ -343,6 +379,7 @@
       const cursorMeta = document.getElementById("cursor-meta");
       const cursorToggle = document.getElementById("cursor-toggle");
       const cursorState = document.getElementById("cursor-state");
+      const presetMeta = document.getElementById("preset-meta");
       let cursorOverlayEnabled = false;
 
       for (let index = 0; index < 16; index += 1) {
@@ -444,6 +481,18 @@
 
       window.desktopMonitor.getCursorOverlayState().then((result) => {
         updateCursorOverlayUi(result?.enabled);
+      });
+
+      document.querySelectorAll("[data-preset]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          presetMeta.textContent = "프리셋 실행 중...";
+          try {
+            const result = await window.desktopMonitor.runOperatorPreset(button.dataset.preset);
+            presetMeta.textContent = `${result?.result?.label || button.dataset.preset} 실행 완료`;
+          } catch (error) {
+            presetMeta.textContent = String(error.message || error);
+          }
+        });
       });
     </script>
   </body>

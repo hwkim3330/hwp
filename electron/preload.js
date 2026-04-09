@@ -19,4 +19,7 @@ contextBridge.exposeInMainWorld("desktopMonitor", {
   getCursorOverlayState() {
     return ipcRenderer.invoke("cursor-overlay:state");
   },
+  runOperatorPreset(presetId) {
+    return ipcRenderer.invoke("operator:run-preset", presetId);
+  },
 });

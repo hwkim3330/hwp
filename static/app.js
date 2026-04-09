@@ -68,7 +68,7 @@ const state = {
   slides: [],
 };
 
-const STORAGE_KEY = "hanpilot-state-v1";
+const STORAGE_KEY = "geulbit-state-v1";
 
 function installMeasureTextWidth() {
   let ctx = null;
@@ -784,16 +784,16 @@ async function exportDocx() {
     "app.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
-  <Application>HanPilot</Application>
+  <Application>Geulbit</Application>
 </Properties>`,
   );
   zip.folder("docProps")?.file(
     "core.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <dc:title>${escapeXml(summary.fileName || "HanPilot Document")}</dc:title>
-  <dc:creator>HanPilot</dc:creator>
-  <cp:lastModifiedBy>HanPilot</cp:lastModifiedBy>
+  <dc:title>${escapeXml(summary.fileName || "Geulbit Document")}</dc:title>
+  <dc:creator>Geulbit</dc:creator>
+  <cp:lastModifiedBy>Geulbit</cp:lastModifiedBy>
   <dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created>
   <dcterms:modified xsi:type="dcterms:W3CDTF">${created}</dcterms:modified>
 </cp:coreProperties>`,
@@ -874,15 +874,15 @@ async function exportXlsx() {
     "app.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
-  <Application>HanPilot</Application>
+  <Application>Geulbit</Application>
 </Properties>`,
   );
   zip.folder("docProps")?.file(
     "core.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <dc:title>${escapeXml(state.fileName || "HanPilot Sheet")}</dc:title>
-  <dc:creator>HanPilot</dc:creator>
+  <dc:title>${escapeXml(state.fileName || "Geulbit Sheet")}</dc:title>
+  <dc:creator>Geulbit</dc:creator>
 </cp:coreProperties>`,
   );
   zip.folder("xl")?.file(
@@ -974,7 +974,7 @@ async function exportPptx() {
     "app.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
-  <Application>HanPilot</Application>
+  <Application>Geulbit</Application>
   <Slides>${slides.length}</Slides>
 </Properties>`,
   );
@@ -982,8 +982,8 @@ async function exportPptx() {
     "core.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <dc:title>${escapeXml(state.fileName || "HanPilot Slides")}</dc:title>
-  <dc:creator>HanPilot</dc:creator>
+  <dc:title>${escapeXml(state.fileName || "Geulbit Slides")}</dc:title>
+  <dc:creator>Geulbit</dc:creator>
   <dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created>
   <dcterms:modified xsi:type="dcterms:W3CDTF">${created}</dcterms:modified>
 </cp:coreProperties>`,
@@ -1024,7 +1024,7 @@ async function exportPptx() {
   zip.folder("ppt")?.folder("theme")?.file(
     "theme1.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="HanPilot Theme">
+<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Geulbit Theme">
   <a:themeElements>
     <a:clrScheme name="Default">
       <a:dk1><a:srgbClr val="1F1A17"/></a:dk1>
@@ -1050,7 +1050,7 @@ async function exportPptx() {
     "slideMaster1.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:cSld name="HanPilot Master"><p:spTree/></p:cSld>
+  <p:cSld name="Geulbit Master"><p:spTree/></p:cSld>
   <p:clrMap accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" bg1="lt1" bg2="lt1" folHlink="folHlink" hlink="hlink" tx1="dk1" tx2="dk1"/>
   <p:sldLayoutIdLst><p:sldLayoutId id="1" r:id="rId1"/></p:sldLayoutIdLst>
 </p:sldMaster>`,

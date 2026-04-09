@@ -103,7 +103,7 @@ function waitForServer(url, timeoutMs = 30000) {
 
     const retry = () => {
       if (Date.now() - start > timeoutMs) {
-        reject(new Error("HanPilot server did not start in time"));
+        reject(new Error("Geulbit server did not start in time"));
         return;
       }
       setTimeout(tryConnect, 500);
@@ -137,7 +137,7 @@ function createMainWindow() {
     height: 980,
     minWidth: 1180,
     minHeight: 760,
-    title: "HanPilot",
+    title: "Geulbit",
     backgroundColor: "#f4efe6",
     autoHideMenuBar: true,
     webPreferences: {
@@ -293,7 +293,7 @@ async function updateMonitor() {
     const title = `${mood.face} ${stats.cpu}% ${stats.mem}%${stats.batt === null ? "" : ` ${stats.batt}%`}`;
     if (tray) {
       tray.setTitle(title);
-      tray.setToolTip(`HanPilot\n${mood.label.toUpperCase()}  CPU ${stats.cpu}%  MEM ${stats.mem}%${stats.batt === null ? "" : `  BAT ${stats.batt}%`}`);
+      tray.setToolTip(`Geulbit\n${mood.label.toUpperCase()}  CPU ${stats.cpu}%  MEM ${stats.mem}%${stats.batt === null ? "" : `  BAT ${stats.batt}%`}`);
     }
     if (monitorWindow && !monitorWindow.isDestroyed()) {
       monitorWindow.webContents.send("system-stats", { ...stats, mood });
@@ -332,7 +332,7 @@ function createTray() {
   tray = new Tray(createTrayImage());
   tray.setTitle("SYS --");
   const contextMenu = Menu.buildFromTemplate([
-    { label: "Open HanPilot", click: () => mainWindow?.show() },
+    { label: "Open Geulbit", click: () => mainWindow?.show() },
     { label: "Toggle System Monitor", click: () => toggleMonitorWindow() },
     { label: "Open Vision Lab", click: () => openVisionWindow() },
     { type: "separator" },

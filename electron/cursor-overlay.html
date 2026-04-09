@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Cursor Overlay</title>
+    <title>Cursor Whip Overlay</title>
     <style>
       html, body, canvas {
         margin: 0;
@@ -27,47 +27,353 @@
     <script>
       const canvas = document.getElementById("overlay");
       const ctx = canvas.getContext("2d");
+
+      const P = {
+        segments: 26,
+        segmentLength: 20,
+        taper: 0.56,
+        gravity: 1.08,
+        damping: 0.955,
+        constraintIters: 18,
+        maxStretchRatio: 1.22,
+        baseTargetAngle: -1.08,
+        handleAimByMouseX: 0.021,
+        handleAimByMouseY: 0.013,
+        handleAimClamp: 0.78,
+        handleSpring: 0.1,
+        handleAngularDamping: 0.76,
+        basePoseSegments: 3,
+        basePoseStiffStart: 0.82,
+        basePoseStiffEnd: 0.52,
+        handleMaxBendDeg: 18,
+        tipMaxBendDeg: 138,
+        bendRigidityStart: 0.62,
+        bendRigidityEnd: 0.12,
+        wallBounce: 0.34,
+        wallFriction: 0.88,
+        lineWidthHandle: 10,
+        lineWidthTip: 3.5,
+        outlineWidth: 3,
+        handleExtraWidth: 6,
+        handleThickSegments: 3,
+        arcWidth: 230,
+        arcHeight: 170,
+      };
+
       let width = 0;
       let height = 0;
       let cursor = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+      let prevCursor = { ...cursor };
+      let whip = null;
+      let handleAngle = P.baseTargetAngle;
+      let handleAngVel = 0;
 
       function resize() {
         width = canvas.width = window.innerWidth;
         height = canvas.height = window.innerHeight;
       }
 
-      function draw() {
-        ctx.clearRect(0, 0, width, height);
+      function clamp(value, low, high) {
+        return Math.max(low, Math.min(high, value));
+      }
 
-        const outerRadius = 36;
-        const innerRadius = 10;
+      function lerp(a, b, t) {
+        return a + (b - a) * t;
+      }
 
+      function wrapPi(angle) {
+        while (angle > Math.PI) angle -= Math.PI * 2;
+        while (angle < -Math.PI) angle += Math.PI * 2;
+        return angle;
+      }
+
+      function segLen(index) {
+        const t = index / (P.segments - 1);
+        return P.segmentLength * (1 - t * (1 - P.taper));
+      }
+
+      function spawnWhip(x, y) {
+        const points = [];
+        for (let index = 0; index < P.segments; index += 1) {
+          const t = index / (P.segments - 1);
+          const px = x + t * P.arcWidth;
+          const py = y - Math.sin(t * Math.PI * 0.75) * P.arcHeight;
+          points.push({ x: px, y: py, px, py });
+        }
+        return points;
+      }
+
+      function catmullPoint(points, index) {
+        const count = points.length;
+        if (index < 0) {
+          return count >= 2
+            ? { x: 2 * points[0].x - points[1].x, y: 2 * points[0].y - points[1].y }
+            : { x: points[0].x, y: points[0].y };
+        }
+        if (index >= count) {
+          return count >= 2
+            ? { x: 2 * points[count - 1].x - points[count - 2].x, y: 2 * points[count - 1].y - points[count - 2].y }
+            : { x: points[count - 1].x, y: points[count - 1].y };
+        }
+        return points[index];
+      }
+
+      function whipSegmentBezier(points, index) {
+        const p0 = catmullPoint(points, index - 1);
+        const p1 = points[index];
+        const p2 = points[index + 1];
+        const p3 = catmullPoint(points, index + 2);
+        return {
+          cp1x: p1.x + (p2.x - p0.x) / 6,
+          cp1y: p1.y + (p2.y - p0.y) / 6,
+          cp2x: p2.x - (p3.x - p1.x) / 6,
+          cp2y: p2.y - (p3.y - p1.y) / 6,
+          x2: p2.x,
+          y2: p2.y,
+        };
+      }
+
+      function updateHandleAim() {
+        const mvx = cursor.x - prevCursor.x;
+        const mvy = cursor.y - prevCursor.y;
+        const delta = clamp(
+          mvx * P.handleAimByMouseX + mvy * P.handleAimByMouseY,
+          -P.handleAimClamp,
+          P.handleAimClamp,
+        );
+        const target = P.baseTargetAngle + delta;
+        const error = wrapPi(target - handleAngle);
+        handleAngVel += error * P.handleSpring;
+        handleAngVel *= P.handleAngularDamping;
+        handleAngle = wrapPi(handleAngle + handleAngVel);
+      }
+
+      function applyBasePose() {
+        if (!whip) return;
+        const dx = Math.cos(handleAngle);
+        const dy = Math.sin(handleAngle);
+        const guided = Math.min(P.basePoseSegments, whip.length - 1);
+        for (let index = 1; index <= guided; index += 1) {
+          const t = (index - 1) / Math.max(guided - 1, 1);
+          const stiff = lerp(P.basePoseStiffStart, P.basePoseStiffEnd, t);
+          const previous = whip[index - 1];
+          const point = whip[index];
+          const targetLen = segLen(index - 1);
+          const tx = previous.x + dx * targetLen;
+          const ty = previous.y + dy * targetLen;
+          point.x = lerp(point.x, tx, stiff);
+          point.y = lerp(point.y, ty, stiff);
+        }
+      }
+
+      function capSegmentStretch() {
+        if (!whip) return;
+        for (let index = 0; index < whip.length - 1; index += 1) {
+          const a = whip[index];
+          const b = whip[index + 1];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.hypot(dx, dy) || 0.0001;
+          const maxLen = segLen(index) * P.maxStretchRatio;
+          if (dist <= maxLen) continue;
+          const scale = maxLen / dist;
+          b.x = a.x + dx * scale;
+          b.y = a.y + dy * scale;
+        }
+      }
+
+      function applyWallCollisions() {
+        if (!whip) return;
+        for (let index = 1; index < whip.length; index += 1) {
+          const point = whip[index];
+          let vx = point.x - point.px;
+          let vy = point.y - point.py;
+          let hit = false;
+
+          if (point.x < 0) {
+            point.x = 0;
+            if (vx < 0) vx = -vx * P.wallBounce;
+            vy *= P.wallFriction;
+            hit = true;
+          } else if (point.x > width) {
+            point.x = width;
+            if (vx > 0) vx = -vx * P.wallBounce;
+            vy *= P.wallFriction;
+            hit = true;
+          }
+
+          if (point.y < 0) {
+            point.y = 0;
+            if (vy < 0) vy = -vy * P.wallBounce;
+            vx *= P.wallFriction;
+            hit = true;
+          } else if (point.y > height) {
+            point.y = height;
+            if (vy > 0) vy = -vy * P.wallBounce;
+            vx *= P.wallFriction;
+            hit = true;
+          }
+
+          if (hit) {
+            point.px = point.x - vx;
+            point.py = point.y - vy;
+          }
+        }
+      }
+
+      function applyBendLimits() {
+        if (!whip || whip.length < 3) return;
+        for (let index = 1; index < whip.length - 1; index += 1) {
+          const a = whip[index - 1];
+          const b = whip[index];
+          const c = whip[index + 1];
+          const v1x = a.x - b.x;
+          const v1y = a.y - b.y;
+          const v2x = c.x - b.x;
+          const v2y = c.y - b.y;
+          const l1 = Math.hypot(v1x, v1y) || 0.0001;
+          const l2 = Math.hypot(v2x, v2y) || 0.0001;
+          const n1x = v1x / l1;
+          const n1y = v1y / l1;
+          const n2x = v2x / l2;
+          const n2y = v2y / l2;
+          const dot = clamp(n1x * n2x + n1y * n2y, -1, 1);
+          const angle = Math.acos(dot);
+          const t = index / (whip.length - 2);
+          const maxBend = lerp(P.handleMaxBendDeg, P.tipMaxBendDeg, t) * Math.PI / 180;
+          const bend = Math.PI - angle;
+          if (bend <= maxBend) continue;
+          const cross = n1x * n2y - n1y * n2x;
+          const sign = cross >= 0 ? 1 : -1;
+          const targetAngle = Math.PI - maxBend;
+          const targetA = Math.atan2(n1y, n1x) + sign * targetAngle;
+          const tx = b.x + Math.cos(targetA) * l2;
+          const ty = b.y + Math.sin(targetA) * l2;
+          const rigidity = lerp(P.bendRigidityStart, P.bendRigidityEnd, t);
+          c.x = lerp(c.x, tx, rigidity);
+          c.y = lerp(c.y, ty, rigidity);
+        }
+      }
+
+      function updateWhip() {
+        if (!whip) {
+          whip = spawnWhip(cursor.x, cursor.y);
+        }
+
+        updateHandleAim();
+
+        for (let index = 1; index < whip.length; index += 1) {
+          const point = whip[index];
+          const vx = (point.x - point.px) * P.damping;
+          const vy = (point.y - point.py) * P.damping;
+          point.px = point.x;
+          point.py = point.y;
+          point.x += vx;
+          point.y += vy + P.gravity;
+        }
+
+        whip[0].x = cursor.x;
+        whip[0].y = cursor.y;
+        whip[0].px = cursor.x;
+        whip[0].py = cursor.y;
+
+        capSegmentStretch();
+        applyWallCollisions();
+        applyBasePose();
+
+        for (let iter = 0; iter < P.constraintIters; iter += 1) {
+          for (let index = 0; index < whip.length - 1; index += 1) {
+            const a = whip[index];
+            const b = whip[index + 1];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const dist = Math.hypot(dx, dy) || 0.0001;
+            const target = segLen(index);
+            const diff = ((dist - target) / dist) * 0.5;
+            const ox = dx * diff;
+            const oy = dy * diff;
+            if (index === 0) {
+              b.x -= ox * 2;
+              b.y -= oy * 2;
+            } else {
+              a.x += ox;
+              a.y += oy;
+              b.x -= ox;
+              b.y -= oy;
+            }
+          }
+          applyBendLimits();
+          applyBasePose();
+          capSegmentStretch();
+          applyWallCollisions();
+        }
+      }
+
+      function drawCursorCore() {
         ctx.beginPath();
-        ctx.arc(cursor.x, cursor.y, outerRadius, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(255, 188, 82, 0.92)";
-        ctx.lineWidth = 5;
-        ctx.shadowColor = "rgba(255, 188, 82, 0.45)";
-        ctx.shadowBlur = 16;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(cursor.x, cursor.y, innerRadius, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255, 251, 239, 0.96)";
+        ctx.arc(cursor.x, cursor.y, 8, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255, 247, 230, 0.96)";
         ctx.fill();
 
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = "rgba(255, 220, 153, 0.65)";
-        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(cursor.x - 64, cursor.y);
-        ctx.lineTo(cursor.x + 64, cursor.y);
-        ctx.moveTo(cursor.x, cursor.y - 64);
-        ctx.lineTo(cursor.x, cursor.y + 64);
+        ctx.arc(cursor.x, cursor.y, 16, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255, 190, 96, 0.86)";
+        ctx.lineWidth = 3;
         ctx.stroke();
       }
 
+      function drawWhip() {
+        if (!whip || whip.length < 2) return;
+
+        ctx.clearRect(0, 0, width, height);
+
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = "#fff7ea";
+        ctx.shadowColor = "rgba(255, 196, 120, 0.34)";
+        ctx.shadowBlur = 14;
+
+        ctx.beginPath();
+        ctx.moveTo(whip[0].x, whip[0].y);
+        for (let index = 0; index < whip.length - 1; index += 1) {
+          const segment = whipSegmentBezier(whip, index);
+          ctx.bezierCurveTo(segment.cp1x, segment.cp1y, segment.cp2x, segment.cp2y, segment.x2, segment.y2);
+        }
+        ctx.lineWidth = P.lineWidthTip + P.outlineWidth * 2;
+        ctx.stroke();
+
+        const thickLinks = Math.min(P.handleThickSegments, whip.length - 1);
+        if (thickLinks > 0) {
+          ctx.beginPath();
+          ctx.moveTo(whip[0].x, whip[0].y);
+          for (let index = 0; index < thickLinks; index += 1) {
+            const segment = whipSegmentBezier(whip, index);
+            ctx.bezierCurveTo(segment.cp1x, segment.cp1y, segment.cp2x, segment.cp2y, segment.x2, segment.y2);
+          }
+          ctx.lineWidth = P.lineWidthHandle + P.handleExtraWidth + P.outlineWidth * 2;
+          ctx.stroke();
+        }
+
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "#1b1714";
+        for (let index = 0; index < whip.length - 1; index += 1) {
+          const t = index / Math.max(1, whip.length - 2);
+          const extra = index < P.handleThickSegments ? P.handleExtraWidth : 0;
+          ctx.lineWidth = lerp(P.lineWidthHandle, P.lineWidthTip, t) + extra;
+          const segment = whipSegmentBezier(whip, index);
+          ctx.beginPath();
+          ctx.moveTo(whip[index].x, whip[index].y);
+          ctx.bezierCurveTo(segment.cp1x, segment.cp1y, segment.cp2x, segment.cp2y, segment.x2, segment.y2);
+          ctx.stroke();
+        }
+
+        drawCursorCore();
+      }
+
       function animate() {
-        draw();
+        updateWhip();
+        drawWhip();
+        prevCursor = { ...cursor };
         requestAnimationFrame(animate);
       }
 
@@ -79,6 +385,7 @@
 
       resize();
       window.addEventListener("resize", resize);
+      whip = spawnWhip(cursor.x, cursor.y);
       animate();
     </script>
   </body>

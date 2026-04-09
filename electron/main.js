@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, ipcMain } = require("electron");
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, ipcMain, screen } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");
 const http = require("http");
@@ -11,9 +11,12 @@ const SERVER_ENTRY = path.resolve(__dirname, "..", "app.py");
 let mainWindow = null;
 let monitorWindow = null;
 let visionWindow = null;
+let cursorOverlayWindow = null;
 let tray = null;
 let serverProcess = null;
 let monitorTimer = null;
+let cursorTimer = null;
+let cursorOverlayEnabled = false;
 let hardwareInfo = {
   gpuLabel: "Unknown",
   gpuLoad: null,
@@ -203,6 +206,48 @@ function createVisionWindow() {
   });
 }
 
+function updateCursorOverlayFrame() {
+  const cursor = screen.getCursorScreenPoint();
+  if (cursorOverlayWindow && !cursorOverlayWindow.isDestroyed()) {
+    cursorOverlayWindow.webContents.send("cursor-overlay-tick", { cursor, enabled: cursorOverlayEnabled });
+  }
+  if (monitorWindow && !monitorWindow.isDestroyed()) {
+    monitorWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, cursor });
+  }
+}
+
+function createCursorOverlayWindow() {
+  const display = screen.getPrimaryDisplay();
+  cursorOverlayWindow = new BrowserWindow({
+    x: display.bounds.x,
+    y: display.bounds.y,
+    width: display.bounds.width,
+    height: display.bounds.height,
+    show: false,
+    frame: false,
+    transparent: true,
+    focusable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    resizable: false,
+    movable: false,
+    fullscreenable: false,
+    title: "Cursor Overlay",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+  cursorOverlayWindow.setAlwaysOnTop(true, "screen-saver");
+  cursorOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  cursorOverlayWindow.setIgnoreMouseEvents(true, { forward: true });
+  cursorOverlayWindow.loadFile(path.join(__dirname, "cursor-overlay.html"));
+  cursorOverlayWindow.on("closed", () => {
+    cursorOverlayWindow = null;
+  });
+}
+
 async function fetchStats() {
   const [load, memory, battery, fsStats, networkStats, ollamaPs] = await Promise.all([
     si.currentLoad(),
@@ -253,6 +298,8 @@ async function fetchStats() {
     diskReadPerSec: Math.round(diskReadPerSec),
     diskWritePerSec: Math.round(diskWritePerSec),
     cpuCores: Array.isArray(load.cpus) ? load.cpus.map((item) => Math.round(item.load || 0)) : [],
+    cursor: screen.getCursorScreenPoint(),
+    cursorOverlayEnabled,
     llm: Array.isArray(ollamaPs.models) && ollamaPs.models.length > 0
       ? {
           active: true,
@@ -328,12 +375,29 @@ function openVisionWindow() {
   visionWindow.focus();
 }
 
+function toggleCursorOverlay(forceState) {
+  cursorOverlayEnabled = typeof forceState === "boolean" ? forceState : !cursorOverlayEnabled;
+  if (!cursorOverlayWindow || cursorOverlayWindow.isDestroyed()) {
+    createCursorOverlayWindow();
+  }
+  if (cursorOverlayEnabled) {
+    cursorOverlayWindow.showInactive();
+  } else if (cursorOverlayWindow && !cursorOverlayWindow.isDestroyed()) {
+    cursorOverlayWindow.hide();
+  }
+  if (monitorWindow && !monitorWindow.isDestroyed()) {
+    monitorWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled });
+  }
+  return cursorOverlayEnabled;
+}
+
 function createTray() {
   tray = new Tray(createTrayImage());
   tray.setTitle("SYS --");
   const contextMenu = Menu.buildFromTemplate([
     { label: "Open hwp", click: () => mainWindow?.show() },
     { label: "Toggle System Monitor", click: () => toggleMonitorWindow() },
+    { label: "Toggle Cursor Spotlight", click: () => toggleCursorOverlay() },
     { label: "Open Vision Lab", click: () => openVisionWindow() },
     { type: "separator" },
     { label: "Open in Browser", click: () => shell.openExternal(APP_URL) },
@@ -350,9 +414,11 @@ async function bootstrap() {
   createMainWindow();
   createMonitorWindow();
   createVisionWindow();
+  createCursorOverlayWindow();
   createTray();
   await updateMonitor();
   monitorTimer = setInterval(updateMonitor, 2000);
+  cursorTimer = setInterval(updateCursorOverlayFrame, 33);
 }
 
 const VISION_RESOURCES = {
@@ -373,6 +439,14 @@ ipcMain.handle("vision:open-resource", async (_event, resource) => {
   return { ok: true };
 });
 
+ipcMain.handle("cursor-overlay:toggle", async (_event, forceState) => {
+  return { ok: true, enabled: toggleCursorOverlay(forceState) };
+});
+
+ipcMain.handle("cursor-overlay:state", async () => {
+  return { ok: true, enabled: cursorOverlayEnabled };
+});
+
 app.whenReady().then(async () => {
   await bootstrap();
   app.on("activate", () => {
@@ -389,6 +463,9 @@ app.on("window-all-closed", (event) => {
 app.on("before-quit", () => {
   if (monitorTimer) {
     clearInterval(monitorTimer);
+  }
+  if (cursorTimer) {
+    clearInterval(cursorTimer);
   }
   if (serverProcess) {
     serverProcess.kill();

@@ -4,7 +4,19 @@ contextBridge.exposeInMainWorld("desktopMonitor", {
   onStats(callback) {
     ipcRenderer.on("system-stats", (_event, payload) => callback(payload));
   },
+  onCursorOverlayState(callback) {
+    ipcRenderer.on("cursor-overlay-state", (_event, payload) => callback(payload));
+  },
+  onCursorOverlayTick(callback) {
+    ipcRenderer.on("cursor-overlay-tick", (_event, payload) => callback(payload));
+  },
   openVisionResource(resource) {
     return ipcRenderer.invoke("vision:open-resource", resource);
+  },
+  toggleCursorOverlay(forceState) {
+    return ipcRenderer.invoke("cursor-overlay:toggle", forceState);
+  },
+  getCursorOverlayState() {
+    return ipcRenderer.invoke("cursor-overlay:state");
   },
 });

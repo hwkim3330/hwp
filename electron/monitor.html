@@ -203,6 +203,29 @@
         color: var(--muted);
       }
 
+      .controls {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .control-button {
+        border: 0;
+        border-radius: 14px;
+        padding: 10px 12px;
+        background: #251d19;
+        color: #fffaf3;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .control-state {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
       @keyframes bob {
         0%,
         100% { transform: translateY(0) rotate(0deg); }
@@ -280,6 +303,16 @@
             </div>
           </div>
         </article>
+
+        <article class="card wide">
+          <div class="label">Cursor Spotlight</div>
+          <div id="cursor-pos" class="value">--</div>
+          <div id="cursor-meta" class="meta">커서 위치와 오버레이 상태를 표시합니다.</div>
+          <div class="controls">
+            <button id="cursor-toggle" class="control-button" type="button">스포트라이트 켜기</button>
+            <div id="cursor-state" class="control-state">현재 꺼짐</div>
+          </div>
+        </article>
       </section>
 
       <div class="footer">가능한 수치만 안정적으로 표시합니다. GPU 실시간 퍼센트와 ANE 사용률은 현재 공개 경로 기준 제한이 있습니다.</div>
@@ -306,6 +339,11 @@
       const llm = document.getElementById("llm");
       const llmMeta = document.getElementById("llm-meta");
       const sparkGrid = document.getElementById("spark-grid");
+      const cursorPos = document.getElementById("cursor-pos");
+      const cursorMeta = document.getElementById("cursor-meta");
+      const cursorToggle = document.getElementById("cursor-toggle");
+      const cursorState = document.getElementById("cursor-state");
+      let cursorOverlayEnabled = false;
 
       for (let index = 0; index < 16; index += 1) {
         const bar = document.createElement("div");
@@ -339,6 +377,12 @@
           return ["안정적", "일반 작업용으로는 충분히 여유롭습니다."];
         }
         return ["한가함", "백그라운드 부하가 낮습니다."];
+      }
+
+      function updateCursorOverlayUi(enabled) {
+        cursorOverlayEnabled = Boolean(enabled);
+        cursorToggle.textContent = cursorOverlayEnabled ? "스포트라이트 끄기" : "스포트라이트 켜기";
+        cursorState.textContent = cursorOverlayEnabled ? "현재 켜짐" : "현재 꺼짐";
       }
 
       window.desktopMonitor.onStats((stats) => {
@@ -375,6 +419,11 @@
 
         net.textContent = `↓ ${formatRate(stats.netRxPerSec)} ↑ ${formatRate(stats.netTxPerSec)}`;
         disk.textContent = `R ${formatRate(stats.diskReadPerSec)} W ${formatRate(stats.diskWritePerSec)}`;
+        cursorPos.textContent = stats.cursor ? `${stats.cursor.x}, ${stats.cursor.y}` : "--";
+        cursorMeta.textContent = stats.cursorOverlayEnabled
+          ? "큰 링과 십자선으로 현재 포인터를 강조합니다."
+          : "커서가 잘 안 보일 때 오버레이를 켜면 됩니다.";
+        updateCursorOverlayUi(stats.cursorOverlayEnabled);
 
         const bars = [...sparkGrid.children];
         const loads = Array.isArray(stats.cpuCores) ? stats.cpuCores : [];
@@ -382,6 +431,19 @@
           const value = loads[index] ?? 0;
           bar.style.height = `${Math.max(6, Math.min(100, value))}%`;
         });
+      });
+
+      window.desktopMonitor.onCursorOverlayState((payload) => {
+        updateCursorOverlayUi(payload?.enabled);
+      });
+
+      cursorToggle.addEventListener("click", async () => {
+        const result = await window.desktopMonitor.toggleCursorOverlay(!cursorOverlayEnabled);
+        updateCursorOverlayUi(result?.enabled);
+      });
+
+      window.desktopMonitor.getCursorOverlayState().then((result) => {
+        updateCursorOverlayUi(result?.enabled);
       });
     </script>
   </body>

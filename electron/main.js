@@ -24,6 +24,20 @@ let hardwareInfo = {
 };
 let previousSample = null;
 
+function getVirtualDisplayBounds() {
+  const displays = screen.getAllDisplays();
+  const left = Math.min(...displays.map((display) => display.bounds.x));
+  const top = Math.min(...displays.map((display) => display.bounds.y));
+  const right = Math.max(...displays.map((display) => display.bounds.x + display.bounds.width));
+  const bottom = Math.max(...displays.map((display) => display.bounds.y + display.bounds.height));
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
 function monitorMood(stats) {
   const stress = Math.max(stats.cpu, stats.mem);
   if (stress >= 90) {
@@ -209,7 +223,11 @@ function createVisionWindow() {
 function updateCursorOverlayFrame() {
   const cursor = screen.getCursorScreenPoint();
   if (cursorOverlayWindow && !cursorOverlayWindow.isDestroyed()) {
-    cursorOverlayWindow.webContents.send("cursor-overlay-tick", { cursor, enabled: cursorOverlayEnabled });
+    const bounds = cursorOverlayWindow.getBounds();
+    cursorOverlayWindow.webContents.send("cursor-overlay-tick", {
+      cursor: { x: cursor.x - bounds.x, y: cursor.y - bounds.y },
+      enabled: cursorOverlayEnabled,
+    });
   }
   if (monitorWindow && !monitorWindow.isDestroyed()) {
     monitorWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, cursor });
@@ -217,12 +235,12 @@ function updateCursorOverlayFrame() {
 }
 
 function createCursorOverlayWindow() {
-  const display = screen.getPrimaryDisplay();
+  const display = getVirtualDisplayBounds();
   cursorOverlayWindow = new BrowserWindow({
-    x: display.bounds.x,
-    y: display.bounds.y,
-    width: display.bounds.width,
-    height: display.bounds.height,
+    x: display.x,
+    y: display.y,
+    width: display.width,
+    height: display.height,
     show: false,
     frame: false,
     transparent: true,
@@ -239,6 +257,7 @@ function createCursorOverlayWindow() {
       sandbox: true,
     },
   });
+  cursorOverlayWindow.setBounds(display);
   cursorOverlayWindow.setAlwaysOnTop(true, "screen-saver");
   cursorOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   cursorOverlayWindow.setIgnoreMouseEvents(true, { forward: true });
@@ -380,8 +399,9 @@ function toggleCursorOverlay(forceState) {
   if (!cursorOverlayWindow || cursorOverlayWindow.isDestroyed()) {
     createCursorOverlayWindow();
   }
+  cursorOverlayWindow.setBounds(getVirtualDisplayBounds());
   if (cursorOverlayEnabled) {
-    cursorOverlayWindow.showInactive();
+    cursorOverlayWindow.show();
   } else if (cursorOverlayWindow && !cursorOverlayWindow.isDestroyed()) {
     cursorOverlayWindow.hide();
   }
@@ -449,6 +469,14 @@ ipcMain.handle("cursor-overlay:state", async () => {
 
 app.whenReady().then(async () => {
   await bootstrap();
+  const syncCursorOverlayBounds = () => {
+    if (cursorOverlayWindow && !cursorOverlayWindow.isDestroyed()) {
+      cursorOverlayWindow.setBounds(getVirtualDisplayBounds());
+    }
+  };
+  screen.on("display-added", syncCursorOverlayBounds);
+  screen.on("display-removed", syncCursorOverlayBounds);
+  screen.on("display-metrics-changed", syncCursorOverlayBounds);
   app.on("activate", () => {
     if (!mainWindow) {
       createMainWindow();

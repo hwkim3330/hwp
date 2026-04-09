@@ -513,6 +513,114 @@ def build_research_writer_blocks(prompt, search_results):
     ]
 
 
+def build_complete_research_note_blocks(prompt, search_results):
+    topic = re.sub(r"\s+", " ", prompt).strip() or "연구 주제"
+    summary_items = []
+    reference_rows = []
+    for index, item in enumerate(search_results[:6], start=1):
+        title = item.get("title", "").strip()
+        snippet = item.get("snippet", "").strip()
+        summary_items.append(f"{title}{': ' + snippet[:160] if snippet else ''}")
+        reference_rows.append([str(index), title, item.get("url", "")])
+    if not summary_items:
+        summary_items = [
+            "관련 자료를 추가 조사해 핵심 배경과 최신 동향을 보강합니다.",
+            "현재 초안은 구조 중심 템플릿이며, 사실 확인 후 세부 내용을 채웁니다.",
+        ]
+        reference_rows = [["1", "추가 조사 필요", ""]]
+
+    return [
+        {"kind": "heading", "level": 1, "text": "연구노트"},
+        {"kind": "paragraph", "text": f"주제\n{topic}"},
+        {"kind": "heading", "level": 2, "text": "연구 목적"},
+        {
+            "kind": "bullets",
+            "items": [
+                "이 주제가 왜 중요한지와 현재 문맥에서 필요한 이유를 정리합니다.",
+                "이번 노트에서 확인해야 할 기술적·업무적 포인트를 분명히 적습니다.",
+                "후속 문서나 발표 자료로 이어질 수 있도록 핵심 질문을 구조화합니다.",
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "핵심 질문"},
+        {
+            "kind": "numbered",
+            "items": [
+                "이 주제의 현재 상태와 핵심 변화는 무엇인가?",
+                "실제 업무나 제품에 적용할 때 어떤 장점과 제약이 있는가?",
+                "다음 단계에서 검증하거나 구현해야 할 항목은 무엇인가?",
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "조사 요약"},
+        {"kind": "numbered", "items": summary_items},
+        {"kind": "heading", "level": 2, "text": "활용 인사이트"},
+        {
+            "kind": "bullets",
+            "items": [
+                "발견한 정보 중 바로 제품 설계나 문서 작업에 반영할 수 있는 항목을 고릅니다.",
+                "성능, 비용, 유지보수성 같은 관점에서 실제 선택 기준을 따로 적습니다.",
+                "실험용과 운영용 구성을 구분해 리스크를 줄이는 방향으로 정리합니다.",
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "다음 액션"},
+        {
+            "kind": "table",
+            "headers": ["항목", "내용", "우선순위"],
+            "rows": [
+                ["1", "참고 링크 원문 검토 및 사실 확인", "상"],
+                ["2", "핵심 인사이트를 문서 또는 발표 구조로 재정리", "상"],
+                ["3", "실행 가능한 실험 항목 선정", "중"],
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "참고 링크"},
+        {
+            "kind": "table",
+            "headers": ["No", "제목", "링크"],
+            "rows": reference_rows,
+        },
+    ]
+
+
+def build_basic_research_note_blocks(prompt):
+    topic = re.sub(r"\s+", " ", prompt).strip() or "연구 주제"
+    return [
+        {"kind": "heading", "level": 1, "text": "연구노트"},
+        {"kind": "paragraph", "text": f"주제\n{topic}"},
+        {"kind": "heading", "level": 2, "text": "배경"},
+        {
+            "kind": "paragraph",
+            "text": "이 주제를 검토하는 이유와 현재 문맥에서의 중요성을 간단히 정리합니다. 이후 조사 결과가 들어오면 이 섹션을 구체화합니다.",
+        },
+        {"kind": "heading", "level": 2, "text": "핵심 질문"},
+        {
+            "kind": "numbered",
+            "items": [
+                "무엇을 확인해야 하는가?",
+                "실제 적용 시 기대 효과와 제약은 무엇인가?",
+                "다음으로 검증해야 할 항목은 무엇인가?",
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "예비 인사이트"},
+        {
+            "kind": "bullets",
+            "items": [
+                "현재 초안은 조사 전 구조를 잡는 단계입니다.",
+                "검색 결과와 원문 검토 후 사실 기반 내용으로 치환해야 합니다.",
+                "최종 문서나 발표 자료로 이어질 수 있게 섹션을 분리했습니다.",
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "다음 액션"},
+        {
+            "kind": "table",
+            "headers": ["항목", "내용", "우선순위"],
+            "rows": [
+                ["1", "자료 조사 및 참고 링크 수집", "상"],
+                ["2", "핵심 질문별 메모 보강", "상"],
+                ["3", "최종 문서/발표 자료 구조로 재정리", "중"],
+            ],
+        },
+    ]
+
+
 class BlockHtmlParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -908,6 +1016,14 @@ def fallback_plan(user_prompt, document, workspace, reason, search_results=None)
             "reply": "슬라이드 초안을 생성했습니다. 오프라인 플래너를 사용했습니다.",
             "operations": [{"type": "set_slides", "slides": build_slides_data(prompt)}],
             "meta": {"planner": "fallback", "reason": reason},
+        }
+
+    if "연구노트" in prompt:
+        blocks = build_complete_research_note_blocks(prompt, search_results) if search_results else build_basic_research_note_blocks(prompt)
+        return {
+            "reply": "연구노트 초안을 생성했습니다. 오프라인 플래너를 사용했습니다.",
+            "operations": [{"type": "set_document_blocks", "blocks": blocks}],
+            "meta": {"planner": "fallback", "reason": reason, "search_results": len(search_results or [])},
         }
 
     if search_results and should_use_web_search(prompt):

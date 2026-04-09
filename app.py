@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from html.parser import HTMLParser
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -28,6 +29,9 @@ ENABLE_VISION_EXPERIMENTS = os.environ.get("ENABLE_VISION_EXPERIMENTS", "1") != 
 ENABLE_SYSTEM_ACTIONS = os.environ.get("ENABLE_SYSTEM_ACTIONS", "1") != "0"
 ENABLE_FILE_AUTOMATION = os.environ.get("ENABLE_FILE_AUTOMATION", "1") != "0"
 USER_AGENT = "hwp/1.0 (+https://github.com/hwkim3330/hwp)"
+SESSION_ID = f"session-{int(time.time())}"
+SESSION_EVENTS = []
+MAX_SESSION_EVENTS = 120
 
 
 SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
@@ -130,6 +134,24 @@ SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
 - sheet rows는 columns 키와 맞는 객체 배열로 반환한다.
 - slides는 title 문자열과 bullets 문자열 배열을 사용한다.
 """
+
+
+def log_session_event(event_type, payload):
+    SESSION_EVENTS.append(
+        {
+            "ts": int(time.time()),
+            "type": event_type,
+            "payload": payload,
+        }
+    )
+    del SESSION_EVENTS[:-MAX_SESSION_EVENTS]
+
+
+def session_snapshot():
+    return {
+        "id": SESSION_ID,
+        "events": SESSION_EVENTS[-60:],
+    }
 
 
 def compact_document(document):
@@ -1059,6 +1081,7 @@ def tool_registry():
 
 def runtime_registry():
     return {
+        "session": {"id": SESSION_ID, "eventCount": len(SESSION_EVENTS)},
         "llm": {"model": LLM_MODEL, "baseUrl": LLM_BASE_URL, "ollama": is_ollama_base_url()},
         "permissions": permission_registry(),
         "tools": tool_registry(),
@@ -1073,18 +1096,21 @@ def run_system_action(action, payload):
         if not target.startswith(("http://", "https://")):
             raise ValueError("invalid url")
         subprocess.run(["open", target], check=True)
+        log_session_event("system_action", {"action": action, "target": target})
         return {"action": action, "target": target}
     if action == "reveal_path":
         target = str(payload.get("path", "")).strip()
         if not target:
             raise ValueError("path required")
         subprocess.run(["open", "-R", target], check=True)
+        log_session_event("system_action", {"action": action, "target": target})
         return {"action": action, "target": target}
     if action == "open_app":
         target = str(payload.get("app", "")).strip()
         if not target:
             raise ValueError("app required")
         subprocess.run(["open", "-a", target], check=True)
+        log_session_event("system_action", {"action": action, "target": target})
         return {"action": action, "target": target}
     raise ValueError(f"unknown action: {action}")
 
@@ -1108,6 +1134,9 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/runtime":
             self._send_json({"ok": True, "runtime": runtime_registry()})
             return
+        if self.path == "/api/session":
+            self._send_json({"ok": True, "session": session_snapshot()})
+            return
         if self.path == "/":
             self.path = "/index.html"
         return super().do_GET()
@@ -1121,7 +1150,9 @@ class Handler(SimpleHTTPRequestHandler):
                 query = str(payload.get("query", "")).strip()
                 if not query:
                     raise ValueError("query is required")
-                self._send_json({"ok": True, "results": web_search(query, max_results=5)})
+                results = web_search(query, max_results=5)
+                log_session_event("search", {"query": query, "count": len(results)})
+                self._send_json({"ok": True, "results": results})
             except Exception as exc:
                 self._send_json({"ok": False, "error": "search_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1173,6 +1204,15 @@ class Handler(SimpleHTTPRequestHandler):
                     except Exception:
                         fallback_results = []
                 plan = fallback_plan(user_prompt, document, workspace, str(exc), fallback_results)
+            log_session_event(
+                "agent_run",
+                {
+                    "mode": workspace["mode"],
+                    "prompt": user_prompt[:400],
+                    "planner": plan.get("meta", {}).get("planner", "unknown"),
+                    "operations": len([item for item in plan.get("operations", []) if item.get("type") != "no_op"]),
+                },
+            )
             self._send_json({"ok": True, "plan": plan})
         except Exception as exc:
             self._send_json(

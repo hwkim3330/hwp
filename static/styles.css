@@ -272,6 +272,37 @@ input {
   font-size: 12px;
 }
 
+.session-event {
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+}
+
+.session-event strong,
+.session-event span,
+.session-event code {
+  display: block;
+}
+
+.session-event strong {
+  font-size: 13px;
+}
+
+.session-event span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.session-event code {
+  margin-top: 7px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  color: var(--ink);
+}
+
 .registry-row span {
   display: block;
   margin-top: 5px;

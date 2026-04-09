@@ -45,6 +45,8 @@ const elements = {
   capHwpforgeMeta: document.querySelector("#cap-hwpforge-meta"),
   toolRegistry: document.querySelector("#tool-registry"),
   permissionRegistry: document.querySelector("#permission-registry"),
+  sessionMeta: document.querySelector("#session-meta"),
+  sessionLog: document.querySelector("#session-log"),
   searchQuery: document.querySelector("#search-query"),
   runSearch: document.querySelector("#run-search"),
   searchResults: document.querySelector("#search-results"),
@@ -199,6 +201,38 @@ function renderSearchResults(results) {
   });
 }
 
+function formatSessionTime(ts) {
+  if (!ts) {
+    return "-";
+  }
+  return new Date(ts * 1000).toLocaleTimeString("ko-KR", { hour12: false });
+}
+
+function renderSessionEvents(events) {
+  if (!elements.sessionLog) {
+    return;
+  }
+  if (!Array.isArray(events) || events.length === 0) {
+    elements.sessionLog.textContent = "아직 기록이 없습니다.";
+    return;
+  }
+  elements.sessionLog.innerHTML = [...events]
+    .reverse()
+    .map((event) => {
+      const payload = event.payload || {};
+      const summary = payload.prompt || payload.query || payload.target || payload.mode || "";
+      return `
+        <div class="session-event">
+          <strong>${escapeHtml(event.type || "event")}</strong>
+          <span>${escapeHtml(formatSessionTime(event.ts))}</span>
+          <span>${escapeHtml(summary).slice(0, 180)}</span>
+          <code>${escapeHtml(JSON.stringify(payload, null, 2))}</code>
+        </div>
+      `;
+    })
+    .join("");
+}
+
 async function refreshRuntimeRegistry() {
   try {
     const response = await fetch("/api/runtime", { cache: "no-store" });
@@ -208,6 +242,10 @@ async function refreshRuntimeRegistry() {
     }
     renderRegistryRows(elements.toolRegistry, data.runtime?.tools, "도구 없음");
     renderRegistryRows(elements.permissionRegistry, data.runtime?.permissions, "권한 정보 없음");
+    if (elements.sessionMeta) {
+      const runtimeSession = data.runtime?.session || {};
+      elements.sessionMeta.textContent = `세션: ${runtimeSession.id || "-"} | 이벤트: ${runtimeSession.eventCount || 0}`;
+    }
   } catch (error) {
     if (elements.toolRegistry) {
       elements.toolRegistry.textContent = "도구 레지스트리 로드 실패";
@@ -216,6 +254,61 @@ async function refreshRuntimeRegistry() {
       elements.permissionRegistry.textContent = String(error.message || error);
     }
   }
+}
+
+async function refreshSessionLog() {
+  try {
+    const response = await fetch("/api/session", { cache: "no-store" });
+    const data = await response.json();
+    if (!data.ok) {
+      throw new Error("session unavailable");
+    }
+    if (elements.sessionMeta) {
+      elements.sessionMeta.textContent = `세션: ${data.session?.id || "-"} | 최근 이벤트: ${(data.session?.events || []).length}`;
+    }
+    renderSessionEvents(data.session?.events || []);
+  } catch (error) {
+    if (elements.sessionLog) {
+      elements.sessionLog.textContent = String(error.message || error);
+    }
+  }
+}
+
+function parseSlashCommands(rawPrompt) {
+  let prompt = String(rawPrompt || "").trim();
+  const effects = { search: false };
+  while (prompt.startsWith("/")) {
+    const [head, ...rest] = prompt.split(/\s+/);
+    const command = head.toLowerCase();
+    const nextPrompt = rest.join(" ").trim();
+    if (command === "/writer") {
+      setMode("writer");
+      prompt = nextPrompt;
+      continue;
+    }
+    if (command === "/notes") {
+      setMode("notes");
+      prompt = nextPrompt;
+      continue;
+    }
+    if (command === "/sheet") {
+      setMode("sheet");
+      prompt = nextPrompt;
+      continue;
+    }
+    if (command === "/slides") {
+      setMode("slides");
+      prompt = nextPrompt;
+      continue;
+    }
+    if (command === "/research" || command === "/search") {
+      effects.search = true;
+      prompt = nextPrompt;
+      continue;
+    }
+    break;
+  }
+  return { prompt, effects };
 }
 
 async function runWebSearch(query) {
@@ -245,6 +338,7 @@ async function runWebSearch(query) {
       elements.searchQuery.value = input;
     }
     setStatus("웹 검색 완료", `${(result.results || []).length}건 결과`);
+    await refreshSessionLog();
   } catch (error) {
     if (elements.searchResults) {
       elements.searchResults.textContent = String(error.message || error);
@@ -274,6 +368,7 @@ async function runSystemAction(action, payload, successMessage = "시스템 액�
     if (elements.systemActionLog) {
       elements.systemActionLog.textContent = `${successMessage}\n${JSON.stringify(result.result, null, 2)}`;
     }
+    await refreshSessionLog();
     return result.result;
   } catch (error) {
     if (elements.systemActionLog) {
@@ -1604,10 +1699,14 @@ async function refreshDocumentView() {
 }
 
 async function runAgent() {
-  const prompt = elements.promptInput.value.trim();
+  const parsed = parseSlashCommands(elements.promptInput.value);
+  const prompt = parsed.prompt;
   if (!prompt) {
     elements.reply.innerHTML = "<p class='error'>요청 문장을 입력해야 합니다.</p>";
     return;
+  }
+  if (parsed.effects.search) {
+    await runWebSearch(elements.searchQuery?.value || prompt);
   }
 
   if (!state.doc) {
@@ -1668,6 +1767,7 @@ async function runAgent() {
       "에이전트 작업이 적용되었습니다.",
       `실행된 작업 수: ${plan.operations.filter((item) => item.type !== "no_op").length}`,
     );
+    await refreshSessionLog();
   } catch (error) {
     elements.reply.innerHTML = `<p class="error">${escapeHtml(String(error.message || error))}</p>`;
     setBadge("실패");
@@ -1694,6 +1794,7 @@ async function boot() {
   await refreshDocumentView();
   await refreshAgentHealth();
   await refreshRuntimeRegistry();
+  await refreshSessionLog();
   setMode(state.mode || "writer");
   setStatus(
     "준비 완료",

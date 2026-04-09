@@ -170,6 +170,36 @@
         <div class="card ops-card">
           <div class="command-head">
             <div>
+              <p class="eyebrow">Workflow</p>
+              <h2>Document Actions</h2>
+            </div>
+          </div>
+          <div class="prompt-list">
+            <button id="action-research-note" class="prompt-chip">연구노트</button>
+            <button id="action-minutes" class="prompt-chip">회의록</button>
+            <button id="action-report" class="prompt-chip">보고서</button>
+            <button id="action-slides" class="prompt-chip">슬라이드화</button>
+          </div>
+          <div class="button-row compact-row" style="margin-top: 10px;">
+            <label class="control-toggle">
+              <input id="search-enabled" type="checkbox" checked />
+              <span>검색 포함</span>
+            </label>
+            <label class="control-select">
+              <span>모델</span>
+              <select id="model-profile">
+                <option value="balanced">균형형</option>
+                <option value="fast">빠른 응답</option>
+                <option value="deep">깊은 작성</option>
+              </select>
+            </label>
+          </div>
+          <div id="workflow-hint" class="reply planner-meta">문서 작업을 버튼으로 고르고 검색 포함 여부를 정한 뒤 실행합니다.</div>
+        </div>
+
+        <div class="card ops-card">
+          <div class="command-head">
+            <div>
               <p class="eyebrow">Research</p>
               <h2>Web Search</h2>
             </div>
@@ -206,7 +236,7 @@
           <div id="mode-hint" class="reply planner-meta">현재 대상: Writer</div>
           <textarea
             id="prompt-input"
-            placeholder="예: 인사평가 회의 결과를 공문 초안으로 정리하고 표로 핵심 일정도 넣어줘. 장기적으로는 검색, 비전, 시스템 액션까지 여기서 묶습니다."
+            placeholder="예: 인사평가 회의 결과를 공문 초안으로 정리하고 표로 핵심 일정도 넣어줘."
           ></textarea>
           <div class="button-row">
             <button id="run-agent">작업 실행</button>

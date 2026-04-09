@@ -47,6 +47,13 @@ const elements = {
   permissionRegistry: document.querySelector("#permission-registry"),
   sessionMeta: document.querySelector("#session-meta"),
   sessionLog: document.querySelector("#session-log"),
+  actionResearchNote: document.querySelector("#action-research-note"),
+  actionMinutes: document.querySelector("#action-minutes"),
+  actionReport: document.querySelector("#action-report"),
+  actionSlides: document.querySelector("#action-slides"),
+  searchEnabled: document.querySelector("#search-enabled"),
+  modelProfile: document.querySelector("#model-profile"),
+  workflowHint: document.querySelector("#workflow-hint"),
   searchQuery: document.querySelector("#search-query"),
   runSearch: document.querySelector("#run-search"),
   searchResults: document.querySelector("#search-results"),
@@ -120,6 +127,12 @@ function setMode(mode) {
   map[mode][1].classList.add("active");
   elements.modeHint.textContent = `현재 대상: ${mode[0].toUpperCase()}${mode.slice(1)}`;
   persistWorkspace();
+}
+
+function setWorkflowHint(message) {
+  if (elements.workflowHint) {
+    elements.workflowHint.textContent = message;
+  }
 }
 
 async function refreshAgentHealth() {
@@ -274,41 +287,19 @@ async function refreshSessionLog() {
   }
 }
 
-function parseSlashCommands(rawPrompt) {
-  let prompt = String(rawPrompt || "").trim();
-  const effects = { search: false };
-  while (prompt.startsWith("/")) {
-    const [head, ...rest] = prompt.split(/\s+/);
-    const command = head.toLowerCase();
-    const nextPrompt = rest.join(" ").trim();
-    if (command === "/writer") {
-      setMode("writer");
-      prompt = nextPrompt;
-      continue;
-    }
-    if (command === "/notes") {
-      setMode("notes");
-      prompt = nextPrompt;
-      continue;
-    }
-    if (command === "/sheet") {
-      setMode("sheet");
-      prompt = nextPrompt;
-      continue;
-    }
-    if (command === "/slides") {
-      setMode("slides");
-      prompt = nextPrompt;
-      continue;
-    }
-    if (command === "/research" || command === "/search") {
-      effects.search = true;
-      prompt = nextPrompt;
-      continue;
-    }
-    break;
+function buildGuiPrompt(rawPrompt) {
+  const prompt = String(rawPrompt || "").trim();
+  const effects = {
+    search: Boolean(elements.searchEnabled?.checked),
+    modelProfile: elements.modelProfile?.value || "balanced",
+  };
+  let finalPrompt = prompt;
+  if (effects.modelProfile === "fast") {
+    finalPrompt = `${finalPrompt}\n\n응답은 짧고 빠르게 작성해.`;
+  } else if (effects.modelProfile === "deep") {
+    finalPrompt = `${finalPrompt}\n\n더 길고 구조적으로 정리해.`;
   }
-  return { prompt, effects };
+  return { prompt: finalPrompt.trim(), effects };
 }
 
 async function runWebSearch(query) {
@@ -1699,7 +1690,7 @@ async function refreshDocumentView() {
 }
 
 async function runAgent() {
-  const parsed = parseSlashCommands(elements.promptInput.value);
+  const parsed = buildGuiPrompt(elements.promptInput.value);
   const prompt = parsed.prompt;
   if (!prompt) {
     elements.reply.innerHTML = "<p class='error'>요청 문장을 입력해야 합니다.</p>";
@@ -1802,6 +1793,33 @@ async function boot() {
   );
   setBadge("준비 완료");
   setRuntimeBadge("Command Ready");
+  setWorkflowHint("문서 작업 버튼, 검색 포함 토글, 모델 프로필을 조합해 실행합니다.");
+}
+
+function applyGuiAction(kind) {
+  if (kind === "research_note") {
+    setMode("writer");
+    elements.promptInput.value = "연구노트 형식으로 정리하고 참고 링크를 포함해줘.";
+    setWorkflowHint("연구노트 초안 모드입니다. 검색 포함을 켜고 실행하면 참고 링크까지 정리합니다.");
+    return;
+  }
+  if (kind === "minutes") {
+    setMode("writer");
+    elements.promptInput.value = "회의록 형태로 정리하고 결정사항과 액션아이템을 표로 넣어줘.";
+    setWorkflowHint("회의록 초안 모드입니다. 기존 문서를 회의록 형식으로 정리합니다.");
+    return;
+  }
+  if (kind === "report") {
+    setMode("writer");
+    elements.promptInput.value = "보고서 형식으로 요약, 핵심 내용, 일정 표를 포함해 작성해줘.";
+    setWorkflowHint("보고서 초안 모드입니다. 요약과 일정 중심으로 정리합니다.");
+    return;
+  }
+  if (kind === "slides") {
+    setMode("slides");
+    elements.promptInput.value = "현재 내용을 발표용 슬라이드 초안으로 변환해줘.";
+    setWorkflowHint("슬라이드화 모드입니다. 현재 요청을 발표 구조로 변환합니다.");
+  }
 }
 
 elements.tabWriter.addEventListener("click", () => setMode("writer"));
@@ -1936,6 +1954,11 @@ elements.promptChips.forEach((button) => {
     }
   });
 });
+
+elements.actionResearchNote?.addEventListener("click", () => applyGuiAction("research_note"));
+elements.actionMinutes?.addEventListener("click", () => applyGuiAction("minutes"));
+elements.actionReport?.addEventListener("click", () => applyGuiAction("report"));
+elements.actionSlides?.addEventListener("click", () => applyGuiAction("slides"));
 
 boot().catch((error) => {
   setBadge("실패");

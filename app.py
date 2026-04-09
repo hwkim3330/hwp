@@ -173,6 +173,34 @@ COMPUTER_USE_SYSTEM_PROMPT = """당신은 브라우저 중심 컴퓨터 유즈 �
 - 최대 6단계까지만 반환한다.
 """
 
+VISION_SYSTEM_PROMPT = """당신은 화면과 카메라 프레임을 분석하는 로컬 비전 어시스턴트다.
+
+역할:
+- 사용자가 준 이미지 한 장을 보고 현재 보이는 핵심 UI 요소나 대상을 요약한다.
+- 응답은 반드시 JSON 객체 하나만 반환한다.
+- 좌표는 이미지 전체 기준 퍼센트(0~100)로 반환한다.
+
+반환 스키마:
+{
+  "reply": "짧은 설명",
+  "summary": "현재 장면 한 줄 요약",
+  "regions": [
+    {"label": "버튼", "x": 12, "y": 18, "width": 30, "height": 10}
+  ],
+  "actions": [
+    "다음으로 무엇을 확인하면 좋은지",
+    "클릭/입력/확인 포인트"
+  ]
+}
+
+제약:
+- JSON 외 텍스트 금지.
+- regions는 최대 6개.
+- label은 짧고 명확하게.
+- x, y, width, height는 0 이상 100 이하 숫자.
+- 보이지 않는 것은 추정하지 말고, 실제 보이는 요소만 설명한다.
+"""
+
 
 def log_session_event(event_type, payload):
     SESSION_EVENTS.append(
@@ -281,6 +309,79 @@ def validate_computer_use_plan(payload):
     if not actions:
         raise ValueError("computer use plan requires actions")
     return {"reply": reply[:400], "summary": summary[:300], "actions": actions}
+
+
+def validate_vision_result(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("vision result must be an object")
+    reply = str(payload.get("reply", "")).strip() or "장면 분석을 완료했습니다."
+    summary = str(payload.get("summary", "")).strip() or reply
+    regions = []
+    for item in payload.get("regions", [])[:6]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            x = max(0.0, min(100.0, float(item.get("x", 0))))
+            y = max(0.0, min(100.0, float(item.get("y", 0))))
+            width = max(1.0, min(100.0, float(item.get("width", 0))))
+            height = max(1.0, min(100.0, float(item.get("height", 0))))
+        except (TypeError, ValueError):
+            continue
+        label = re.sub(r"\s+", " ", str(item.get("label", "")).strip())[:80]
+        if not label:
+            continue
+        regions.append({"label": label, "x": x, "y": y, "width": width, "height": height})
+    actions = [re.sub(r"\s+", " ", str(item).strip())[:200] for item in payload.get("actions", [])[:6] if str(item).strip()]
+    return {"reply": reply[:400], "summary": summary[:300], "regions": regions, "actions": actions}
+
+
+def decode_data_url_image(image_data_url):
+    raw = str(image_data_url or "").strip()
+    match = re.match(r"^data:(image/[\w.+-]+);base64,(.+)$", raw, re.DOTALL)
+    if not match:
+        raise ValueError("invalid image data url")
+    return match.group(1), match.group(2)
+
+
+def call_vision_llm(prompt, image_data_url, source="screen"):
+    if not ENABLE_VISION_EXPERIMENTS:
+        raise PermissionError("vision experiments disabled")
+    mime_type, image_b64 = decode_data_url_image(image_data_url)
+    user_content = json.dumps(
+        {
+            "prompt": prompt,
+            "source": source,
+            "mime_type": mime_type,
+        },
+        ensure_ascii=False,
+    )
+    if is_ollama_base_url():
+        payload = {
+            "model": LLM_MODEL,
+            "messages": [
+                {"role": "system", "content": VISION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content, "images": [image_b64]},
+            ],
+            "stream": False,
+            "format": "json",
+            "options": {
+                "temperature": 0.1,
+                "num_predict": min(LLM_MAX_TOKENS, 600),
+            },
+        }
+        req = request.Request(
+            "http://127.0.0.1:11434/api/chat",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with request.urlopen(req, timeout=max(LLM_TIMEOUT_SECONDS, 30)) as response:
+            raw = response.read().decode("utf-8")
+        data = json.loads(raw)
+        content = data["message"]["content"]
+        return validate_vision_result(json.loads(extract_json_object(content)))
+
+    raise ValueError("vision analysis currently requires local Ollama multimodal runtime")
 
 
 def build_computer_use_fallback_plan(goal, current_url="", search_results=None):
@@ -1695,6 +1796,30 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": True, "session_id": session_id, "plan": {**plan, "meta": meta}})
             except Exception as exc:
                 self._send_json({"ok": False, "error": "computer_use_plan_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/vision/analyze":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(body or "{}")
+                prompt = re.sub(r"\s+", " ", str(payload.get("prompt", "")).strip()) or "현재 장면에서 중요한 대상과 다음 액션을 알려줘."
+                image_data_url = str(payload.get("image_data_url", "")).strip()
+                source = str(payload.get("source", "screen")).strip() or "screen"
+                if not image_data_url:
+                    raise ValueError("image_data_url is required")
+                result = call_vision_llm(prompt, image_data_url, source=source)
+                log_session_event(
+                    "vision_analyze",
+                    {
+                        "source": source,
+                        "prompt": prompt[:240],
+                        "regions": len(result.get("regions", [])),
+                        "actions": len(result.get("actions", [])),
+                    },
+                )
+                self._send_json({"ok": True, "result": result})
+            except Exception as exc:
+                self._send_json({"ok": False, "error": "vision_analyze_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         if self.path == "/api/computer-use/run":
             try:

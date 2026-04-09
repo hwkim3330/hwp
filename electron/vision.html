@@ -215,6 +215,32 @@
         pointer-events: none;
       }
 
+      .vision-overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .vision-box {
+        position: absolute;
+        border: 2px solid rgba(141, 240, 193, 0.95);
+        border-radius: 16px;
+        box-shadow: 0 0 0 1px rgba(9, 36, 25, 0.28), 0 0 18px rgba(141, 240, 193, 0.24);
+      }
+
+      .vision-box-label {
+        position: absolute;
+        top: -28px;
+        left: 0;
+        padding: 5px 8px;
+        border-radius: 999px;
+        background: rgba(9, 36, 25, 0.82);
+        color: #eafff5;
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
       .dot {
         position: absolute;
         width: 18px;
@@ -385,6 +411,7 @@
             <video id="camera" autoplay playsinline muted></video>
             <div class="reticle"></div>
             <div id="face-dot" class="dot" style="left:50%; top:50%; opacity:0;"></div>
+            <div id="camera-overlay" class="vision-overlay"></div>
           </div>
           <div id="camera-meta" class="meta">MacBook Pro Camera 감지. 공개 macOS 기준으로는 표준 웹캠 경로만 사용 가능합니다.</div>
         </article>
@@ -408,6 +435,7 @@
           <div id="screen-chip" class="status-chip">화면 입력 대기 중</div>
           <div class="lab-stage">
             <video id="screen-video" autoplay playsinline muted></video>
+            <div id="screen-overlay" class="vision-overlay"></div>
           </div>
           <div id="screen-meta" class="meta">getDisplayMedia를 사용합니다. 화면 기록 권한이 필요할 수 있습니다.</div>
         </article>
@@ -424,6 +452,20 @@
           <div id="audio-chip" class="status-chip">마이크 대기 중</div>
           <div class="meter"><div id="audio-bar" class="meter-bar"></div></div>
           <div id="audio-meta" class="meta">트랙패드 진동은 직접 제어하지 못하므로 현재는 사운드 큐와 시각 피드백을 사용합니다.</div>
+        </article>
+
+        <article class="card wide">
+          <span class="tag good">Gemma Vision</span>
+          <h2>장면 분석</h2>
+          <p>현재 화면이나 카메라 프레임을 `Gemma 4`로 보내 핵심 영역과 다음 액션을 추출합니다.</p>
+          <textarea id="vision-prompt" rows="4" style="width:100%; min-height:120px;">현재 보이는 핵심 대상과 클릭/확인 포인트를 짧게 정리해줘.</textarea>
+          <div class="button-row">
+            <button id="analyze-screen">화면 분석</button>
+            <button id="analyze-camera" class="secondary">카메라 분석</button>
+          </div>
+          <div id="vision-chip" class="status-chip">분석 대기 중</div>
+          <div id="vision-summary" class="meta">화면이나 카메라 입력이 준비되면 바로 분석할 수 있습니다.</div>
+          <ul id="vision-actions" class="flat-list"></ul>
         </article>
 
         <article class="card wide">
@@ -460,11 +502,13 @@
       const cameraMeta = document.getElementById("camera-meta");
       const cameraChip = document.getElementById("camera-chip");
       const faceDot = document.getElementById("face-dot");
+      const cameraOverlay = document.getElementById("camera-overlay");
       const permissionGrid = document.getElementById("permission-grid");
       const permissionMeta = document.getElementById("permission-meta");
       const startScreen = document.getElementById("start-screen");
       const stopScreen = document.getElementById("stop-screen");
       const screenVideo = document.getElementById("screen-video");
+      const screenOverlay = document.getElementById("screen-overlay");
       const screenChip = document.getElementById("screen-chip");
       const screenMeta = document.getElementById("screen-meta");
       const startAudio = document.getElementById("start-audio");
@@ -473,6 +517,12 @@
       const audioChip = document.getElementById("audio-chip");
       const audioBar = document.getElementById("audio-bar");
       const audioMeta = document.getElementById("audio-meta");
+      const visionPrompt = document.getElementById("vision-prompt");
+      const analyzeScreen = document.getElementById("analyze-screen");
+      const analyzeCamera = document.getElementById("analyze-camera");
+      const visionChip = document.getElementById("vision-chip");
+      const visionSummary = document.getElementById("vision-summary");
+      const visionActions = document.getElementById("vision-actions");
       let stream = null;
       let screenStream = null;
       let audioStream = null;
@@ -526,6 +576,70 @@
             }
           });
         });
+      }
+
+      function clearVisionOverlay(target) {
+        target.innerHTML = "";
+      }
+
+      function renderVisionOverlay(target, regions = []) {
+        clearVisionOverlay(target);
+        regions.forEach((region) => {
+          const box = document.createElement("div");
+          box.className = "vision-box";
+          box.style.left = `${region.x}%`;
+          box.style.top = `${region.y}%`;
+          box.style.width = `${region.width}%`;
+          box.style.height = `${region.height}%`;
+          const label = document.createElement("div");
+          label.className = "vision-box-label";
+          label.textContent = region.label;
+          box.appendChild(label);
+          target.appendChild(box);
+        });
+      }
+
+      function captureFrame(video) {
+        if (!video || !video.videoWidth || !video.videoHeight) {
+          throw new Error("입력 프레임이 아직 준비되지 않았습니다.");
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL("image/jpeg", 0.92);
+      }
+
+      async function analyzeVision(source) {
+        const useScreen = source === "screen";
+        const video = useScreen ? screenVideo : camera;
+        const overlay = useScreen ? screenOverlay : cameraOverlay;
+        visionChip.textContent = `${useScreen ? "화면" : "카메라"} 분석 중`;
+        visionSummary.textContent = "Gemma 4가 현재 프레임을 해석하는 중입니다.";
+        visionActions.innerHTML = "";
+        clearVisionOverlay(overlay);
+        const imageDataUrl = captureFrame(video);
+        const response = await fetch("http://127.0.0.1:8765/api/vision/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: visionPrompt.value.trim(),
+            source,
+            image_data_url: imageDataUrl,
+          }),
+        });
+        const data = await response.json();
+        if (!data.ok) {
+          throw new Error(data.detail || data.error || "vision analyze failed");
+        }
+        const result = data.result || {};
+        visionChip.textContent = `${useScreen ? "화면" : "카메라"} 분석 완료`;
+        visionSummary.textContent = result.summary || result.reply || "분석 완료";
+        renderVisionOverlay(overlay, result.regions || []);
+        visionActions.innerHTML = (result.actions || [])
+          .map((item) => `<li>${item}</li>`)
+          .join("") || "<li>추가 액션 제안이 없습니다.</li>";
       }
 
       function stopCameraLab() {
@@ -708,6 +822,20 @@
         permissionMeta.textContent = "권한 상태를 불러왔습니다.";
       }).catch((error) => {
         permissionMeta.textContent = String(error.message || error);
+      });
+
+      analyzeScreen.addEventListener("click", () => {
+        analyzeVision("screen").catch((error) => {
+          visionChip.textContent = "화면 분석 실패";
+          visionSummary.textContent = String(error.message || error);
+        });
+      });
+
+      analyzeCamera.addEventListener("click", () => {
+        analyzeVision("camera").catch((error) => {
+          visionChip.textContent = "카메라 분석 실패";
+          visionSummary.textContent = String(error.message || error);
+        });
       });
     </script>
   </body>

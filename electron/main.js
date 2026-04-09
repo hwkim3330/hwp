@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, ipcMain, screen, globalShortcut } = require("electron");
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, ipcMain, screen, globalShortcut, systemPreferences } = require("electron");
 const path = require("path");
 const { spawn, execFile } = require("child_process");
 const http = require("http");
@@ -24,6 +24,13 @@ let hardwareInfo = {
   npuLabel: "Unavailable",
 };
 let previousSample = null;
+let lastCueAt = 0;
+let lastCriticalAlertAt = 0;
+const LID_ANGLE_CANDIDATES = [
+  process.env.HWP_LID_ANGLE_CMD || "",
+  "/opt/homebrew/bin/LidAngleSensor",
+  "/usr/local/bin/LidAngleSensor",
+];
 const OPERATOR_PRESETS = {
   claude_fast: {
     label: "Claude Fast",
@@ -138,6 +145,7 @@ async function runOperatorPreset(presetId) {
   await refocusPreviousApp();
   await new Promise((resolve) => setTimeout(resolve, 160));
   await typeToFrontmostApp(preset.text, preset.submit !== false);
+  maybePlayCue("action");
   return { preset: presetId, label: preset.label };
 }
 
@@ -153,6 +161,125 @@ function captureScreenshotToClipboard() {
         return;
       }
       resolve({ ok: true });
+    });
+  });
+}
+
+function playSystemCue(kind = "success") {
+  return new Promise((resolve, reject) => {
+    if (process.platform !== "darwin") {
+      resolve({ ok: false, message: "sound cues currently support macOS only" });
+      return;
+    }
+    const soundMap = {
+      success: "/System/Library/Sounds/Glass.aiff",
+      action: "/System/Library/Sounds/Pop.aiff",
+      alert: "/System/Library/Sounds/Funk.aiff",
+      focus: "/System/Library/Sounds/Tink.aiff",
+    };
+    execFile("afplay", [soundMap[kind] || soundMap.success], (error) => {
+      if (error) {
+        reject(new Error(error.message));
+        return;
+      }
+      resolve({ ok: true, kind });
+    });
+  });
+}
+
+function maybePlayCue(kind) {
+  const now = Date.now();
+  if (now - lastCueAt < 500) {
+    return;
+  }
+  lastCueAt = now;
+  playSystemCue(kind).catch(() => {});
+}
+
+function openPrivacyPane(kind) {
+  const paneMap = {
+    camera: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera",
+    microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+    screen: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+    accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+    automation: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
+  };
+  return shell.openExternal(paneMap[kind] || "x-apple.systempreferences:com.apple.preference.security");
+}
+
+async function probeAccessibilityStatus() {
+  if (process.platform !== "darwin") {
+    return "unsupported";
+  }
+  try {
+    await runAppleScript('tell application "System Events" to return UI elements enabled');
+    return "granted";
+  } catch {
+    return "needs-manual-enable";
+  }
+}
+
+async function getPermissionSnapshot() {
+  const permissions = {
+    camera: "unknown",
+    microphone: "unknown",
+    screen: "unknown",
+    accessibility: "unknown",
+    automation: "manual",
+  };
+  if (process.platform === "darwin") {
+    try {
+      permissions.camera = systemPreferences.getMediaAccessStatus("camera");
+      permissions.microphone = systemPreferences.getMediaAccessStatus("microphone");
+      permissions.screen = systemPreferences.getMediaAccessStatus("screen");
+    } catch {
+      permissions.camera = "unsupported";
+      permissions.microphone = "unsupported";
+      permissions.screen = "unsupported";
+    }
+    permissions.accessibility = await probeAccessibilityStatus();
+  }
+  return permissions;
+}
+
+async function requestPermission(kind) {
+  if (process.platform !== "darwin") {
+    return { ok: false, kind, message: "macOS only" };
+  }
+  if (kind === "camera" || kind === "microphone") {
+    const granted = await systemPreferences.askForMediaAccess(kind);
+    if (granted) {
+      maybePlayCue("success");
+    }
+    return { ok: true, kind, granted };
+  }
+  await openPrivacyPane(kind);
+  maybePlayCue("focus");
+  return { ok: true, kind, granted: false, openedSettings: true };
+}
+
+function findLidAngleCommand() {
+  return LID_ANGLE_CANDIDATES.find((candidate) => candidate) || "";
+}
+
+function readLidAngle() {
+  return new Promise((resolve) => {
+    const command = findLidAngleCommand();
+    if (!command) {
+      resolve({ available: false, angle: null, status: "not-installed" });
+      return;
+    }
+    execFile(command, [], { timeout: 1200 }, (error, stdout) => {
+      if (error) {
+        resolve({ available: false, angle: null, status: "error", detail: error.message });
+        return;
+      }
+      const match = String(stdout || "").match(/(-?\d+(?:\.\d+)?)/);
+      if (!match) {
+        resolve({ available: true, angle: null, status: "no-value", command });
+        return;
+      }
+      resolve({ available: true, angle: Number(match[1]), status: "ok", command });
     });
   });
 }
@@ -364,13 +491,15 @@ function createCursorOverlayWindow() {
 }
 
 async function fetchStats() {
-  const [load, memory, battery, fsStats, networkStats, ollamaPs] = await Promise.all([
+  const [load, memory, battery, fsStats, networkStats, ollamaPs, permissions, lidAngle] = await Promise.all([
     si.currentLoad(),
     si.mem(),
     si.battery(),
     si.fsStats(),
     si.networkStats(),
     requestJson("http://127.0.0.1:11434/api/ps").catch(() => ({ models: [] })),
+    getPermissionSnapshot(),
+    readLidAngle(),
   ]);
 
   const cpu = Math.round(load.currentLoad);
@@ -400,7 +529,7 @@ async function fetchStats() {
     network: network ? { rx_bytes: network.rx_bytes, tx_bytes: network.tx_bytes } : null,
     fs: fsStats ? { rx: fsStats.rx, wx: fsStats.wx } : null,
   };
-  return {
+  const snapshot = {
     cpu,
     mem,
     batt,
@@ -432,7 +561,14 @@ async function fetchStats() {
     gpuLabel: hardwareInfo.gpuLabel,
     gpuLoad: hardwareInfo.gpuLoad,
     npuLabel: hardwareInfo.npuLabel,
+    permissions,
+    lidAngle,
   };
+  if ((cpu >= 88 || mem >= 90) && Date.now() - lastCriticalAlertAt > 20000) {
+    lastCriticalAlertAt = Date.now();
+    maybePlayCue("alert");
+  }
+  return snapshot;
 }
 
 async function loadHardwareInfo() {
@@ -531,6 +667,7 @@ async function ipcCaptureScreenshot() {
     captureStatus = { ok: true, message: "캡처 대기 중" };
     await captureScreenshotToClipboard();
     captureStatus = { ok: true, message: "클립보드에 캡처 완료" };
+    maybePlayCue("success");
   } catch (error) {
     captureStatus = { ok: false, message: String(error.message || error) };
     throw error;
@@ -570,6 +707,18 @@ ipcMain.handle("vision:open-resource", async (_event, resource) => {
   }
   await shell.openExternal(url);
   return { ok: true };
+});
+
+ipcMain.handle("permissions:get-status", async () => {
+  return { ok: true, permissions: await getPermissionSnapshot() };
+});
+
+ipcMain.handle("permissions:request", async (_event, kind) => {
+  return requestPermission(kind);
+});
+
+ipcMain.handle("sound:play-cue", async (_event, kind) => {
+  return playSystemCue(kind);
 });
 
 ipcMain.handle("cursor-overlay:toggle", async (_event, forceState) => {

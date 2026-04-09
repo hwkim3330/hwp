@@ -25,4 +25,13 @@ contextBridge.exposeInMainWorld("desktopMonitor", {
   captureScreenshot() {
     return ipcRenderer.invoke("capture:screenshot");
   },
+  getPermissionStatus() {
+    return ipcRenderer.invoke("permissions:get-status");
+  },
+  requestPermission(kind) {
+    return ipcRenderer.invoke("permissions:request", kind);
+  },
+  playCue(kind) {
+    return ipcRenderer.invoke("sound:play-cue", kind);
+  },
 });

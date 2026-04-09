@@ -251,6 +251,47 @@
         line-height: 1.45;
       }
 
+      .permission-grid {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .permission-item {
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.62);
+        border: 1px solid var(--line);
+      }
+
+      .permission-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+      }
+
+      .permission-state {
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+
+      .permission-button {
+        margin-top: 8px;
+        width: 100%;
+        border: 0;
+        border-radius: 12px;
+        padding: 8px 10px;
+        background: rgba(37, 29, 25, 0.92);
+        color: #fffaf3;
+        font: inherit;
+        cursor: pointer;
+      }
+
       .wide-button {
         width: 100%;
       }
@@ -359,6 +400,16 @@
           <button id="capture-button" class="control-button wide-button" type="button">클립보드 캡처</button>
           <div id="capture-meta" class="preset-meta">단축키 `Cmd/Ctrl + Shift + 1` 또는 이 버튼으로 영역 캡처 후 클립보드에 넣습니다.</div>
         </article>
+
+        <article class="card wide">
+          <div class="label">Permissions / Sensors</div>
+          <div id="permission-grid" class="permission-grid"></div>
+          <div id="sensor-meta" class="preset-meta">기울기 센서는 외부 브리지 설치 시 연결됩니다. 트랙패드 진동은 현재 Electron 경로에선 직접 제어하지 못합니다.</div>
+          <div class="preset-grid">
+            <button id="cue-success" class="preset-button" type="button">성공 사운드</button>
+            <button id="cue-alert" class="preset-button" type="button">경고 사운드</button>
+          </div>
+        </article>
       </section>
 
       <div class="footer">가능한 수치만 안정적으로 표시합니다. GPU 실시간 퍼센트와 ANE 사용률은 현재 공개 경로 기준 제한이 있습니다.</div>
@@ -392,6 +443,10 @@
       const presetMeta = document.getElementById("preset-meta");
       const captureButton = document.getElementById("capture-button");
       const captureMeta = document.getElementById("capture-meta");
+      const permissionGrid = document.getElementById("permission-grid");
+      const sensorMeta = document.getElementById("sensor-meta");
+      const cueSuccess = document.getElementById("cue-success");
+      const cueAlert = document.getElementById("cue-alert");
       let cursorOverlayEnabled = false;
 
       for (let index = 0; index < 16; index += 1) {
@@ -432,6 +487,62 @@
         cursorOverlayEnabled = Boolean(enabled);
         cursorToggle.textContent = cursorOverlayEnabled ? "채찍 끄기" : "채찍 켜기";
         cursorState.textContent = cursorOverlayEnabled ? "현재 켜짐" : "현재 꺼짐";
+      }
+
+      function permissionLabel(status) {
+        const map = {
+          granted: "허용됨",
+          denied: "거부됨",
+          restricted: "제한됨",
+          "not-determined": "미설정",
+          unknown: "확인 불가",
+          unsupported: "미지원",
+          manual: "수동 설정",
+          "needs-manual-enable": "수동 허용 필요",
+        };
+        return map[status] || status || "-";
+      }
+
+      function renderPermissions(permissions = {}, lidAngle = {}) {
+        const items = [
+          { key: "camera", title: "카메라", detail: "Vision Lab과 비전 실험에 사용" },
+          { key: "microphone", title: "마이크", detail: "음성 입력과 오디오 실험에 사용" },
+          { key: "screen", title: "화면 기록", detail: "캡처와 컴퓨터 유즈에 필요" },
+          { key: "accessibility", title: "접근성", detail: "키 입력, 자동화, 커서 제어에 필요" },
+        ];
+        permissionGrid.innerHTML = items
+          .map(
+            (item) => `
+              <div class="permission-item">
+                <div class="permission-head">
+                  <strong>${item.title}</strong>
+                  <span>${permissionLabel(permissions[item.key])}</span>
+                </div>
+                <div class="permission-state">${item.detail}</div>
+                <button class="permission-button" data-kind="${item.key}" type="button">권한 열기</button>
+              </div>
+            `,
+          )
+          .join("");
+        permissionGrid.querySelectorAll("[data-kind]").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const kind = button.dataset.kind;
+            sensorMeta.textContent = `${kind} 권한 요청 중...`;
+            try {
+              const result = await window.desktopMonitor.requestPermission(kind);
+              sensorMeta.textContent = result?.openedSettings
+                ? `${kind} 권한 설정 화면을 열었습니다.`
+                : `${kind} 권한 결과: ${result?.granted ? "허용됨" : "변경 없음"}`;
+            } catch (error) {
+              sensorMeta.textContent = String(error.message || error);
+            }
+          });
+        });
+        if (lidAngle?.available) {
+          sensorMeta.textContent = typeof lidAngle.angle === "number"
+            ? `맥북 각도 ${lidAngle.angle.toFixed(1)}° · ${lidAngle.command || "외부 브리지"}`
+            : `기울기 브리지는 감지됐지만 값이 아직 없습니다.`;
+        }
       }
 
       window.desktopMonitor.onStats((stats) => {
@@ -476,6 +587,7 @@
         if (stats.captureStatus?.message) {
           captureMeta.textContent = `${stats.captureStatus.message} · 단축키 Cmd/Ctrl + Shift + 1`;
         }
+        renderPermissions(stats.permissions || {}, stats.lidAngle || {});
 
         const bars = [...sparkGrid.children];
         const loads = Array.isArray(stats.cpuCores) ? stats.cpuCores : [];
@@ -518,6 +630,30 @@
         } catch (error) {
           captureMeta.textContent = String(error.message || error);
         }
+      });
+
+      cueSuccess.addEventListener("click", async () => {
+        sensorMeta.textContent = "성공 사운드 재생 중...";
+        try {
+          await window.desktopMonitor.playCue("success");
+          sensorMeta.textContent = "성공 사운드를 재생했습니다.";
+        } catch (error) {
+          sensorMeta.textContent = String(error.message || error);
+        }
+      });
+
+      cueAlert.addEventListener("click", async () => {
+        sensorMeta.textContent = "경고 사운드 재생 중...";
+        try {
+          await window.desktopMonitor.playCue("alert");
+          sensorMeta.textContent = "경고 사운드를 재생했습니다.";
+        } catch (error) {
+          sensorMeta.textContent = String(error.message || error);
+        }
+      });
+
+      window.desktopMonitor.getPermissionStatus().then((result) => {
+        renderPermissions(result?.permissions || {}, {});
       });
     </script>
   </body>

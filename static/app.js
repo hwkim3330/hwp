@@ -220,6 +220,15 @@ function renderOnlyOfficeSessions(items) {
   });
 }
 
+function setComputerUsePresetGoal(goal) {
+  if (elements.computerUseGoal) {
+    elements.computerUseGoal.value = goal;
+  }
+  if (elements.computerUseMeta) {
+    elements.computerUseMeta.textContent = `브라우저 목표 준비: ${goal}`;
+  }
+}
+
 function formatComputerUseAction(action) {
   if (!action || typeof action !== "object") {
     return "";
@@ -2447,13 +2456,19 @@ elements.openMonitor?.addEventListener("click", () =>
   ),
 );
 
-elements.promptChips.forEach((button) => {
+elements.promptChips
+  .filter((button) => button.dataset.prompt)
+  .forEach((button) => {
   button.addEventListener("click", () => {
     elements.promptInput.value = button.dataset.prompt || "";
     if (elements.searchQuery && !elements.searchQuery.value.trim()) {
       elements.searchQuery.value = elements.promptInput.value;
     }
   });
+  });
+
+document.querySelectorAll(".computer-preset").forEach((button) => {
+  button.addEventListener("click", () => setComputerUsePresetGoal(button.dataset.goal || ""));
 });
 
 elements.actionResearchNote?.addEventListener("click", () => applyGuiAction("research_note"));

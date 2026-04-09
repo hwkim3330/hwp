@@ -4,12 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>hwp</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -66,10 +60,12 @@
       <main class="workspace">
         <div class="workspace-head">
           <div>
-            <p class="eyebrow">Preview</p>
+            <p class="eyebrow">Workspace</p>
             <h2>오피스 워크스테이션</h2>
           </div>
-          <span id="render-badge" class="badge">대기</span>
+          <div class="workspace-head-actions">
+            <span id="render-badge" class="badge">대기</span>
+          </div>
         </div>
         <section class="dashboard-shell">
           <article class="card dashboard-card">
@@ -246,6 +242,11 @@
           <div class="button-row compact-row">
             <input id="computer-use-goal" class="ops-input" type="text" placeholder="예: Gemma 4 최신 릴리스 확인하고 공식 문서 2개 열어줘." />
             <button id="plan-computer-use">브라우저 계획</button>
+          </div>
+          <div class="prompt-list prompt-list-tight">
+            <button class="prompt-chip computer-preset" data-goal="Gemma 4 최신 공식 문서 2개 확인하고 핵심 링크를 정리해줘.">공식 문서</button>
+            <button class="prompt-chip computer-preset" data-goal="최신 릴리스 노트와 모델 카드 페이지를 열어줘.">릴리스 확인</button>
+            <button class="prompt-chip computer-preset" data-goal="browser-use 최신 저장소와 문서를 비교해 참고 링크를 찾아줘.">참고 조사</button>
           </div>
           <div class="computer-use-hero">
             <div class="computer-use-headline">

@@ -37,21 +37,6 @@
         </div>
 
         <div class="card">
-          <h2>샘플 요청</h2>
-          <div class="prompt-list">
-            <button class="prompt-chip" data-prompt="팀 주간업무보고 초안을 제목, 요약, 진행현황 표, 다음주 계획으로 작성해줘.">
-              주간업무보고
-            </button>
-            <button class="prompt-chip" data-prompt="회의록 형태로 정리하고 결정사항과 액션아이템을 표로 넣어줘.">
-              회의록 정리
-            </button>
-            <button class="prompt-chip" data-prompt="현재 문서를 더 격식 있는 공문체로 다듬어줘.">
-              공문체 다듬기
-            </button>
-          </div>
-        </div>
-
-        <div class="card">
           <h2>상태</h2>
           <pre id="status-box">초기화 중...</pre>
         </div>
@@ -80,6 +65,36 @@
             <span id="live-activity-shortcut">Cmd/Ctrl + Enter로 바로 실행</span>
             <span id="live-activity-progress">대기 중</span>
           </div>
+        </section>
+        <section class="command-deck card">
+          <div class="command-deck-head">
+            <div>
+              <p class="eyebrow">Command</p>
+              <h2>한 번에 지시</h2>
+            </div>
+            <span id="command-route-hint" class="route-pill">Document</span>
+          </div>
+          <div id="mode-hint" class="reply planner-meta">현재 대상: Writer</div>
+          <textarea
+            id="prompt-input"
+            class="command-input"
+            placeholder="예: 인사평가 회의 결과를 공문 초안으로 정리해줘. 또는 Gemma 4 최신 공식 문서 2개 찾아서 핵심 링크를 정리해줘."
+          ></textarea>
+          <div class="command-deck-actions">
+            <div class="prompt-list">
+              <button class="prompt-chip" data-prompt="팀 주간업무보고 초안을 제목, 요약, 진행현황 표, 다음주 계획으로 작성해줘.">
+                주간업무보고
+              </button>
+              <button class="prompt-chip" data-prompt="회의록 형태로 정리하고 결정사항과 액션아이템을 표로 넣어줘.">
+                회의록 정리
+              </button>
+              <button class="prompt-chip" data-prompt="Gemma 4 최신 공식 문서 2개 찾아서 핵심 링크를 정리해줘.">
+                공식 문서 찾기
+              </button>
+            </div>
+            <button id="run-agent">실행</button>
+          </div>
+          <div id="agent-reply" class="reply">문서 작업과 브라우저 작업을 여기서 바로 시작합니다.</div>
         </section>
         <section class="dashboard-shell">
           <article class="card dashboard-card">
@@ -307,24 +322,6 @@
             <button id="open-monitor" class="secondary">활동 모니터</button>
           </div>
           <div id="system-action-log" class="reply planner-meta">제한된 시스템 액션만 허용됩니다.</div>
-        </div>
-
-        <div class="card chat-card">
-          <div class="command-head">
-            <div>
-              <p class="eyebrow">Operator</p>
-              <h2>에이전트</h2>
-            </div>
-          </div>
-          <div id="mode-hint" class="reply planner-meta">현재 대상: Writer</div>
-          <textarea
-            id="prompt-input"
-            placeholder="예: 인사평가 회의 결과를 공문 초안으로 정리하고 표로 핵심 일정도 넣어줘."
-          ></textarea>
-          <div class="button-row">
-            <button id="run-agent">작업 실행</button>
-          </div>
-          <div id="agent-reply" class="reply"></div>
         </div>
 
         <div class="card">

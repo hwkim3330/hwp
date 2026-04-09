@@ -36,6 +36,7 @@ const elements = {
   liveActivityDetail: document.querySelector("#live-activity-detail"),
   liveActivityShortcut: document.querySelector("#live-activity-shortcut"),
   liveActivityProgress: document.querySelector("#live-activity-progress"),
+  commandRouteHint: document.querySelector("#command-route-hint"),
   agentRuntime: document.querySelector("#agent-runtime"),
   dashboardNow: document.querySelector("#dashboard-now"),
   dashboardCapture: document.querySelector("#dashboard-capture"),
@@ -181,8 +182,12 @@ function setWorkflowHint(message) {
 
 function setLiveRoute(route, detail = "") {
   state.liveRoute = route;
+  const routeLabel = route === "computer_use" ? "Browser" : route === "document" ? "Document" : "Auto";
   if (elements.liveActivityRoute) {
-    elements.liveActivityRoute.textContent = route === "computer_use" ? "Browser" : route === "document" ? "Document" : "Auto";
+    elements.liveActivityRoute.textContent = routeLabel;
+  }
+  if (elements.commandRouteHint) {
+    elements.commandRouteHint.textContent = routeLabel;
   }
   if (elements.liveActivityShortcut) {
     elements.liveActivityShortcut.textContent =
@@ -192,6 +197,20 @@ function setLiveRoute(route, detail = "") {
   }
   if (detail && elements.liveActivityDetail) {
     elements.liveActivityDetail.textContent = detail;
+  }
+}
+
+function previewAgentRoute() {
+  const prompt = String(elements.promptInput?.value || "").trim();
+  const route = detectAgentRoute(prompt);
+  if (!prompt) {
+    if (elements.commandRouteHint) {
+      elements.commandRouteHint.textContent = "Document";
+    }
+    return;
+  }
+  if (elements.commandRouteHint) {
+    elements.commandRouteHint.textContent = route === "computer_use" ? "Browser" : "Document";
   }
 }
 
@@ -2380,6 +2399,7 @@ async function boot() {
   setBadge("준비 완료");
   setRuntimeBadge("Command Ready");
   setWorkflowHint("문서 작업 버튼, 검색 포함 토글, 모델 프로필을 조합해 실행합니다.");
+  previewAgentRoute();
   if (elements.editorEngine) {
     elements.editorEngine.value = "native";
   }
@@ -2540,6 +2560,7 @@ elements.promptInput?.addEventListener("keydown", (event) => {
     runAgent();
   }
 });
+elements.promptInput?.addEventListener("input", previewAgentRoute);
 elements.runSearch?.addEventListener("click", () => runWebSearch(elements.searchQuery?.value || elements.promptInput.value));
 elements.searchQuery?.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {

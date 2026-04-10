@@ -41,6 +41,9 @@ MAX_SESSION_EVENTS = 120
 ONLYOFFICE_SESSIONS = {}
 BROWSER_USE_REFERENCE_DIR = Path(os.environ.get("BROWSER_USE_REFERENCE_DIR", str(Path.home() / "office-agent-sources" / "browser-use"))).expanduser()
 BROWSER_USE_SESSIONS = {}
+MEMPALACE_REFERENCE_DIR = Path(os.environ.get("MEMPALACE_REFERENCE_DIR", str(Path.home() / "office-agent-sources" / "mempalace"))).expanduser()
+MEMORY_ITEMS = []
+MAX_MEMORY_ITEMS = 400
 
 
 SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
@@ -211,6 +214,81 @@ def log_session_event(event_type, payload):
         }
     )
     del SESSION_EVENTS[:-MAX_SESSION_EVENTS]
+
+
+def mempalace_reference_status():
+    path = MEMPALACE_REFERENCE_DIR
+    if not path.is_dir():
+        return {"available": False, "path": str(path), "detail": "mempalace reference not found"}
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(path), "log", "--oneline", "-1"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        detail = (result.stdout or result.stderr).strip() or "reference available"
+    except Exception as exc:
+        detail = str(exc)
+    return {"available": True, "path": str(path), "detail": detail}
+
+
+def remember_memory(kind, title, text, metadata=None):
+    title = re.sub(r"\s+", " ", str(title or "").strip())[:160]
+    text = re.sub(r"\s+", " ", str(text or "").strip())[:4000]
+    if not title and not text:
+        return
+    item = {
+        "id": uuid.uuid4().hex,
+        "ts": int(time.time()),
+        "kind": str(kind or "note")[:40],
+        "title": title or "Untitled memory",
+        "text": text,
+        "metadata": metadata or {},
+    }
+    MEMORY_ITEMS.insert(0, item)
+    del MEMORY_ITEMS[MAX_MEMORY_ITEMS:]
+
+
+def tokenize_memory_text(text):
+    return [token for token in re.findall(r"[0-9A-Za-z가-힣]{2,}", str(text).lower()) if len(token) >= 2]
+
+
+def search_memory(query, limit=6):
+    q = re.sub(r"\s+", " ", str(query or "").strip())
+    if not q:
+        return MEMORY_ITEMS[:limit]
+    query_tokens = tokenize_memory_text(q)
+    scored = []
+    for item in MEMORY_ITEMS:
+        haystack = f"{item.get('title', '')} {item.get('text', '')}".lower()
+        score = 0.0
+        for token in query_tokens:
+            if token in haystack:
+                score += 1.0
+        if q.lower() in haystack:
+            score += 3.0
+        age_penalty = max(0, int(time.time()) - int(item.get("ts", 0))) / 86400
+        score += max(0, 2.5 - min(2.5, age_penalty / 3))
+        if score > 0:
+            scored.append((score, item))
+    scored.sort(key=lambda pair: (-pair[0], -pair[1].get("ts", 0)))
+    return [item for _, item in scored[:limit]]
+
+
+def compact_memory_items(items):
+    compact = []
+    for item in items[:8]:
+        compact.append(
+            {
+                "kind": item.get("kind", ""),
+                "title": item.get("title", "")[:160],
+                "text": item.get("text", "")[:700],
+                "ts": item.get("ts", 0),
+            }
+        )
+    return compact
 
 
 def session_snapshot():
@@ -457,6 +535,7 @@ def create_browser_use_session(goal, plan):
         "history": [],
     }
     log_session_event("computer_use_plan", {"session_id": session_id, "goal": goal[:240], "steps": len(plan.get("actions", []))})
+    remember_memory("browser_plan", f"브라우저 계획 · {goal[:80]}", f"{plan.get('summary', '')}\n{json.dumps(plan.get('actions', []), ensure_ascii=False)}", {"session_id": session_id})
     return session_id
 
 
@@ -486,6 +565,7 @@ def run_computer_use_step(session_id, step_index):
     session["status"] = "running" if action_type != "note" else "review"
     session.setdefault("history", []).append({"ts": int(time.time()), "step_index": step_index, "action": action, "result": result})
     log_session_event("computer_use_step", {"session_id": session_id, "step_index": step_index, "type": action_type})
+    remember_memory("browser_step", f"브라우저 단계 {step_index + 1}", json.dumps({"action": action, "result": result}, ensure_ascii=False), {"session_id": session_id})
     return {"session_id": session_id, "step_index": step_index, "action": action, "result": result}
 
 
@@ -1389,6 +1469,7 @@ def fallback_plan(user_prompt, document, workspace, reason, search_results=None)
 
 def call_llm(user_prompt, document):
     search_results = []
+    memory_results = search_memory(user_prompt, limit=6)
     if should_use_web_search(user_prompt):
         try:
             search_results = web_search(user_prompt, max_results=5)
@@ -1404,6 +1485,7 @@ def call_llm(user_prompt, document):
                 "sheet": compact_sheet(document.get("sheet", {})),
                 "slides": compact_slides(document.get("slides", [])),
             },
+            "memory_recall": compact_memory_items(memory_results),
             "web_search": search_results,
         },
         ensure_ascii=False,
@@ -1413,7 +1495,7 @@ def call_llm(user_prompt, document):
         {"role": "user", "content": user_content},
     ]
     if is_ollama_base_url():
-        return call_ollama_llm(messages), search_results
+        return call_ollama_llm(messages), search_results, memory_results
 
     payload = {
         "model": LLM_MODEL,
@@ -1437,7 +1519,7 @@ def call_llm(user_prompt, document):
         raw = response.read().decode("utf-8")
     data = json.loads(raw)
     content = data["choices"][0]["message"]["content"]
-    return validate_plan(json.loads(extract_json_object(content))), search_results
+    return validate_plan(json.loads(extract_json_object(content))), search_results, memory_results
 
 
 def call_ollama_json(messages):
@@ -1607,6 +1689,13 @@ def tool_registry():
             "status": "disabled" if not ENABLE_BROWSER_AUTOMATION else "experimental",
             "detail": browser_use_reference_status()["detail"],
         },
+        {
+            "id": "memory_recall",
+            "label": "Memory Recall",
+            "category": "memory",
+            "status": "ready",
+            "detail": mempalace_reference_status()["detail"],
+        },
     ]
 
 
@@ -1616,6 +1705,7 @@ def runtime_registry():
         "llm": {"model": LLM_MODEL, "baseUrl": LLM_BASE_URL, "ollama": is_ollama_base_url()},
         "onlyoffice": {"docsUrl": ONLYOFFICE_DOCS_URL, "sessions": len(ONLYOFFICE_SESSIONS)},
         "computerUse": {"sessions": len(BROWSER_USE_SESSIONS), "reference": browser_use_reference_status()},
+        "memory": {"items": len(MEMORY_ITEMS), "reference": mempalace_reference_status()},
         "permissions": permission_registry(),
         "tools": tool_registry(),
     }
@@ -1630,6 +1720,7 @@ def run_system_action(action, payload):
             raise ValueError("invalid url")
         subprocess.run(["open", target], check=True)
         log_session_event("system_action", {"action": action, "target": target})
+        remember_memory("system_action", "URL 열기", target, {"action": action})
         return {"action": action, "target": target}
     if action == "reveal_path":
         target = str(payload.get("path", "")).strip()
@@ -1637,6 +1728,7 @@ def run_system_action(action, payload):
             raise ValueError("path required")
         subprocess.run(["open", "-R", target], check=True)
         log_session_event("system_action", {"action": action, "target": target})
+        remember_memory("system_action", "파일 위치 열기", target, {"action": action})
         return {"action": action, "target": target}
     if action == "open_app":
         target = str(payload.get("app", "")).strip()
@@ -1644,6 +1736,7 @@ def run_system_action(action, payload):
             raise ValueError("app required")
         subprocess.run(["open", "-a", target], check=True)
         log_session_event("system_action", {"action": action, "target": target})
+        remember_memory("system_action", "앱 열기", target, {"action": action})
         return {"action": action, "target": target}
     raise ValueError(f"unknown action: {action}")
 
@@ -1663,11 +1756,16 @@ class Handler(SimpleHTTPRequestHandler):
                     "hwpforge": hwpforge_status(),
                     "onlyoffice": {"docsUrl": ONLYOFFICE_DOCS_URL, "sessions": len(ONLYOFFICE_SESSIONS)},
                     "computerUse": {"sessions": len(BROWSER_USE_SESSIONS), "reference": browser_use_reference_status()},
+                    "memory": {"items": len(MEMORY_ITEMS), "reference": mempalace_reference_status()},
                 }
             )
             return
         if self.path == "/api/runtime":
             self._send_json({"ok": True, "runtime": runtime_registry()})
+            return
+        if self.path.startswith("/api/memory/search"):
+            query = parse_qs(urlparse(self.path).query).get("q", [""])[0]
+            self._send_json({"ok": True, "items": compact_memory_items(search_memory(query, limit=8))})
             return
         if self.path == "/api/session":
             self._send_json({"ok": True, "session": session_snapshot()})
@@ -1719,6 +1817,7 @@ class Handler(SimpleHTTPRequestHandler):
                     raise ValueError("query is required")
                 results = web_search(query, max_results=5)
                 log_session_event("search", {"query": query, "count": len(results)})
+                remember_memory("search", f"검색 · {query[:80]}", json.dumps(results[:5], ensure_ascii=False), {"count": len(results)})
                 self._send_json({"ok": True, "results": results})
             except Exception as exc:
                 self._send_json({"ok": False, "error": "search_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -1817,6 +1916,7 @@ class Handler(SimpleHTTPRequestHandler):
                         "actions": len(result.get("actions", [])),
                     },
                 )
+                remember_memory("vision", f"비전 분석 · {source}", f"{result.get('summary', '')}\n{json.dumps(result.get('actions', []), ensure_ascii=False)}", {"source": source})
                 self._send_json({"ok": True, "result": result})
             except Exception as exc:
                 self._send_json({"ok": False, "error": "vision_analyze_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -1856,11 +1956,13 @@ class Handler(SimpleHTTPRequestHandler):
                 raise ValueError("prompt is required")
             try:
                 llm_document = {**document, **workspace}
-                plan, search_results = call_llm(user_prompt, llm_document)
+                plan, search_results, memory_results = call_llm(user_prompt, llm_document)
                 plan = finalize_plan(workspace["mode"], user_prompt, document, workspace, plan)
                 meta = {"planner": "llm"}
                 if search_results:
                     meta["search_results"] = len(search_results)
+                if memory_results:
+                    meta["memory_results"] = len(memory_results)
                 plan = {**plan, "meta": meta}
             except (error.HTTPError, error.URLError, TimeoutError, ValueError, KeyError, json.JSONDecodeError) as exc:
                 fallback_results = []
@@ -1870,6 +1972,8 @@ class Handler(SimpleHTTPRequestHandler):
                     except Exception:
                         fallback_results = []
                 plan = fallback_plan(user_prompt, document, workspace, str(exc), fallback_results)
+                memory_results = search_memory(user_prompt, limit=6)
+            remember_memory("agent", f"에이전트 요청 · {workspace['mode']}", user_prompt, {"mode": workspace["mode"]})
             log_session_event(
                 "agent_run",
                 {

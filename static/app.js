@@ -45,6 +45,8 @@ const elements = {
   docMeta: document.querySelector("#doc-meta"),
   outlineBox: document.querySelector("#outline-box"),
   recentCommands: document.querySelector("#recent-commands"),
+  memoryMeta: document.querySelector("#memory-meta"),
+  memoryRecall: document.querySelector("#memory-recall"),
   statusBox: document.querySelector("#status-box"),
   renderBadge: document.querySelector("#render-badge"),
   liveActivityTitle: document.querySelector("#live-activity-title"),
@@ -125,6 +127,7 @@ const state = {
 const STORAGE_KEY = "hwp-state-v1";
 const MAX_COMMAND_HISTORY = 12;
 let writerEditorSyncTimer = 0;
+let memoryRecallTimer = 0;
 
 function installMeasureTextWidth() {
   let ctx = null;
@@ -247,11 +250,19 @@ function previewAgentRoute() {
     if (elements.commandRouteHint) {
       elements.commandRouteHint.textContent = "Document";
     }
+    window.clearTimeout(memoryRecallTimer);
+    memoryRecallTimer = window.setTimeout(() => {
+      refreshMemoryRecall("");
+    }, 120);
     return;
   }
   if (elements.commandRouteHint) {
     elements.commandRouteHint.textContent = route === "computer_use" ? "Browser" : "Document";
   }
+  window.clearTimeout(memoryRecallTimer);
+  memoryRecallTimer = window.setTimeout(() => {
+    refreshMemoryRecall(prompt);
+  }, 180);
 }
 
 async function applyStartupCommandFromUrl() {
@@ -380,6 +391,48 @@ function renderCommandHistory() {
       await runAgent();
     });
   });
+}
+
+function renderMemoryRecall(items) {
+  if (!elements.memoryRecall) {
+    return;
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    elements.memoryRecall.textContent = "아직 회수된 기억이 없습니다.";
+    return;
+  }
+  elements.memoryRecall.innerHTML = items
+    .map(
+      (item) => `
+        <div class="session-event">
+          <strong>${escapeHtml(item.title || item.kind || "memory")}</strong>
+          <span>${escapeHtml(item.kind || "-")} · ${escapeHtml(formatTimestamp((item.ts || 0) * 1000))}</span>
+          <code>${escapeHtml(item.text || "")}</code>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+async function refreshMemoryRecall(query = "") {
+  if (!elements.memoryRecall) {
+    return;
+  }
+  try {
+    const response = await fetch(`/api/memory/search?q=${encodeURIComponent(query)}`, { cache: "no-store" });
+    const data = await response.json();
+    if (!data.ok) {
+      throw new Error("memory unavailable");
+    }
+    renderMemoryRecall(data.items || []);
+    if (elements.memoryMeta) {
+      elements.memoryMeta.textContent = query
+        ? `현재 입력 기준 기억 ${data.items?.length || 0}개`
+        : `최근 기억 ${data.items?.length || 0}개`;
+    }
+  } catch (error) {
+    elements.memoryRecall.textContent = String(error.message || error);
+  }
 }
 
 function rememberCommand(prompt, route) {
@@ -558,7 +611,7 @@ async function refreshAgentHealth() {
     setEngineMeta(`ONLYOFFICE Docs: ${health.onlyoffice?.docsUrl || "http://127.0.0.1:8080"} | active sessions ${health.onlyoffice?.sessions ?? 0}`);
     setRuntimeBadge(health.hwpforge?.available ? "Local Ops Ready" : "Partial Local Mode");
     if (elements.dashboardNow) {
-      elements.dashboardNow.textContent = `모델 ${health.model || "unknown"} · HWPX ${health.hwpforge?.available ? "ready" : "offline"} · OOXML ${health.onlyoffice?.sessions ?? 0} · Browser ${health.computerUse?.sessions ?? 0}`;
+      elements.dashboardNow.textContent = `모델 ${health.model || "unknown"} · HWPX ${health.hwpforge?.available ? "ready" : "offline"} · OOXML ${health.onlyoffice?.sessions ?? 0} · Browser ${health.computerUse?.sessions ?? 0} · Memory ${health.memory?.items ?? 0}`;
     }
   } catch (error) {
     elements.capLlm.textContent = "offline";
@@ -2760,6 +2813,7 @@ async function boot() {
   await refreshAgentHealth();
   await refreshRuntimeRegistry();
   await refreshSessionLog();
+  await refreshMemoryRecall("");
   await refreshOnlyOfficeSessions();
   await refreshComputerUseSessions();
   setMode(state.mode || "writer");

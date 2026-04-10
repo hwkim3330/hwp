@@ -20,6 +20,7 @@ from urllib import error, request
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
 ONLYOFFICE_RUNTIME_DIR = ROOT / ".runtime" / "onlyoffice"
+MEMORY_RUNTIME_PATH = ROOT / ".runtime" / "memory.json"
 HOST = os.environ.get("OFFICE_AGENT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("OFFICE_AGENT_PORT", "8765"))
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:11434/v1").rstrip("/")
@@ -250,6 +251,7 @@ def remember_memory(kind, title, text, metadata=None):
     }
     MEMORY_ITEMS.insert(0, item)
     del MEMORY_ITEMS[MAX_MEMORY_ITEMS:]
+    save_memory_store()
 
 
 def tokenize_memory_text(text):
@@ -300,8 +302,50 @@ def set_memory_pinned(memory_id, pinned):
     for item in MEMORY_ITEMS:
         if item.get("id") == memory_id:
             item["pinned"] = bool(pinned)
+            save_memory_store()
             return item
     raise KeyError("memory not found")
+
+
+def delete_memory(memory_id):
+    for index, item in enumerate(MEMORY_ITEMS):
+        if item.get("id") == memory_id:
+            removed = MEMORY_ITEMS.pop(index)
+            save_memory_store()
+            return removed
+    raise KeyError("memory not found")
+
+
+def save_memory_store():
+    MEMORY_RUNTIME_PATH.parent.mkdir(parents=True, exist_ok=True)
+    MEMORY_RUNTIME_PATH.write_text(
+        json.dumps(MEMORY_ITEMS[:MAX_MEMORY_ITEMS], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def load_memory_store():
+    if not MEMORY_RUNTIME_PATH.is_file():
+        return
+    try:
+        items = json.loads(MEMORY_RUNTIME_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    MEMORY_ITEMS.clear()
+    for item in items[:MAX_MEMORY_ITEMS]:
+        if not isinstance(item, dict):
+            continue
+        MEMORY_ITEMS.append(
+            {
+                "id": str(item.get("id") or uuid.uuid4().hex),
+                "ts": int(item.get("ts", int(time.time()))),
+                "kind": str(item.get("kind", "note"))[:40],
+                "title": str(item.get("title", "Untitled memory"))[:160],
+                "text": str(item.get("text", ""))[:4000],
+                "pinned": bool(item.get("pinned")),
+                "metadata": item.get("metadata", {}) if isinstance(item.get("metadata", {}), dict) else {},
+            }
+        )
 
 
 def session_snapshot():
@@ -1912,6 +1956,19 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 self._send_json({"ok": False, "error": "memory_pin_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
+        if self.path == "/api/memory/delete":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(body or "{}")
+                memory_id = str(payload.get("id", "")).strip()
+                if not memory_id:
+                    raise ValueError("id is required")
+                item = delete_memory(memory_id)
+                self._send_json({"ok": True, "item": compact_memory_items([item])[0]})
+            except Exception as exc:
+                self._send_json({"ok": False, "error": "memory_delete_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
         if self.path == "/api/computer-use/plan":
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -2046,6 +2103,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main():
+    load_memory_store()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"hwp listening on http://{HOST}:{PORT}")
     print(f"LLM endpoint: {LLM_BASE_URL}/chat/completions")

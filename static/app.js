@@ -412,6 +412,7 @@ function renderMemoryRecall(items) {
           <div class="session-link-row">
             <button class="secondary memory-use" data-title="${escapeHtml(item.title || "")}" data-text="${escapeHtml(item.text || "")}">프롬프트로</button>
             <button class="secondary memory-pin" data-id="${escapeHtml(item.id || "")}" data-pinned="${item.pinned ? "0" : "1"}">${item.pinned ? "고정 해제" : "고정"}</button>
+            <button class="secondary memory-delete" data-id="${escapeHtml(item.id || "")}">삭제</button>
           </div>
         </div>
       `,
@@ -441,6 +442,25 @@ function renderMemoryRecall(items) {
         const data = await response.json();
         if (!data.ok) {
           throw new Error(data.detail || data.error || "memory pin failed");
+        }
+        await refreshMemoryRecall(String(elements.promptInput?.value || "").trim());
+      } catch (error) {
+        elements.memoryRecall.textContent = String(error.message || error);
+      }
+    });
+  });
+  elements.memoryRecall.querySelectorAll(".memory-delete").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = decodeHtml(button.dataset.id || "");
+      try {
+        const response = await fetch("/api/memory/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
+        const data = await response.json();
+        if (!data.ok) {
+          throw new Error(data.detail || data.error || "memory delete failed");
         }
         await refreshMemoryRecall(String(elements.promptInput?.value || "").trim());
       } catch (error) {

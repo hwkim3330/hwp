@@ -348,6 +348,31 @@ def load_memory_store():
         )
 
 
+def import_memory_items(items, replace=False):
+    if replace:
+        MEMORY_ITEMS.clear()
+    for item in items[:MAX_MEMORY_ITEMS]:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "")).strip()[:160]
+        text = str(item.get("text", "")).strip()[:4000]
+        if not text:
+            continue
+        MEMORY_ITEMS.append(
+            {
+                "id": str(item.get("id") or uuid.uuid4().hex),
+                "ts": int(item.get("ts", int(time.time()))),
+                "kind": str(item.get("kind", "note"))[:40],
+                "title": title or text[:80],
+                "text": text,
+                "pinned": bool(item.get("pinned")),
+                "metadata": item.get("metadata", {}) if isinstance(item.get("metadata", {}), dict) else {},
+            }
+        )
+    del MEMORY_ITEMS[MAX_MEMORY_ITEMS:]
+    save_memory_store()
+
+
 def session_snapshot():
     return {
         "id": SESSION_ID,
@@ -1824,6 +1849,9 @@ class Handler(SimpleHTTPRequestHandler):
             query = parse_qs(urlparse(self.path).query).get("q", [""])[0]
             self._send_json({"ok": True, "items": compact_memory_items(search_memory(query, limit=8))})
             return
+        if self.path == "/api/memory/export":
+            self._send_json({"ok": True, "items": MEMORY_ITEMS[:MAX_MEMORY_ITEMS]})
+            return
         if self.path == "/api/session":
             self._send_json({"ok": True, "session": session_snapshot()})
             return
@@ -1968,6 +1996,20 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": True, "item": compact_memory_items([item])[0]})
             except Exception as exc:
                 self._send_json({"ok": False, "error": "memory_delete_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/memory/import":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(body or "{}")
+                items = payload.get("items", [])
+                replace = bool(payload.get("replace", False))
+                if not isinstance(items, list):
+                    raise ValueError("items must be a list")
+                import_memory_items(items, replace=replace)
+                self._send_json({"ok": True, "items": compact_memory_items(MEMORY_ITEMS)})
+            except Exception as exc:
+                self._send_json({"ok": False, "error": "memory_import_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         if self.path == "/api/computer-use/plan":
             try:

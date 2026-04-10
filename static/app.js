@@ -2058,7 +2058,7 @@ async function loadDocumentFromFile(file) {
       const parsed = JSON.parse(text);
       if (isWorkspaceSnapshot(parsed)) {
         createBlankDocument();
-        applyWorkspaceSnapshot(parsed);
+        await applyWorkspaceSnapshot(parsed);
         renderSheet();
         renderSlides();
         renderCommandHistory();
@@ -2122,8 +2122,35 @@ function downloadBytes(bytes, fileName) {
   URL.revokeObjectURL(url);
 }
 
-function exportWorkspacePackage() {
+async function fetchMemoryExport() {
+  const response = await fetch("/api/memory/export", { cache: "no-store" });
+  const data = await response.json();
+  if (!data.ok) {
+    throw new Error(data.detail || data.error || "memory export failed");
+  }
+  return Array.isArray(data.items) ? data.items : [];
+}
+
+async function importWorkspaceMemories(items, replace = true) {
+  const response = await fetch("/api/memory/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items, replace }),
+  });
+  const data = await response.json();
+  if (!data.ok) {
+    throw new Error(data.detail || data.error || "memory import failed");
+  }
+  return data.items || [];
+}
+
+async function exportWorkspacePackage() {
   const snapshot = createWorkspaceSnapshot();
+  try {
+    snapshot.memory = await fetchMemoryExport();
+  } catch {
+    snapshot.memory = [];
+  }
   downloadText(JSON.stringify(snapshot, null, 2), toWorkspaceFileName(state.fileName), "application/json;charset=utf-8");
 }
 
@@ -2372,7 +2399,7 @@ function isWorkspaceSnapshot(value) {
   );
 }
 
-function applyWorkspaceSnapshot(saved) {
+async function applyWorkspaceSnapshot(saved) {
   if (typeof saved.fileName === "string" && saved.fileName.trim()) {
     state.fileName = saved.fileName;
   }
@@ -2404,6 +2431,10 @@ function applyWorkspaceSnapshot(saved) {
   if (typeof saved.liveRoute === "string") {
     state.liveRoute = saved.liveRoute;
   }
+  if (Array.isArray(saved.memory)) {
+    await importWorkspaceMemories(saved.memory, true);
+    await refreshMemoryRecall(String(elements.promptInput?.value || "").trim());
+  }
 }
 
 function persistWorkspace() {
@@ -2416,14 +2447,14 @@ function persistWorkspace() {
   } catch {}
 }
 
-function restoreWorkspace() {
+async function restoreWorkspace() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       return;
     }
     const saved = JSON.parse(raw);
-    applyWorkspaceSnapshot(saved);
+    await applyWorkspaceSnapshot(saved);
   } catch {}
 }
 
@@ -2864,7 +2895,7 @@ async function boot() {
   await init({ module_or_path: WASM_URL });
   state.ready = true;
   createBlankDocument();
-  restoreWorkspace();
+  await restoreWorkspace();
   renderCommandHistory();
   if (state.sheetRows.length === 0) {
     resetSheetData();
@@ -2948,8 +2979,8 @@ elements.newDocument.addEventListener("click", async () => {
   setBadge("새 문서");
 });
 
-elements.exportWorkspace?.addEventListener("click", () => {
-  exportWorkspacePackage();
+elements.exportWorkspace?.addEventListener("click", async () => {
+  await exportWorkspacePackage();
   setStatus("작업 패키지를 저장했습니다.", toWorkspaceFileName(state.fileName));
 });
 

@@ -63,6 +63,7 @@ const elements = {
   pages: document.querySelector("#pages"),
   writerEditor: document.querySelector("#writer-editor"),
   promptInput: document.querySelector("#prompt-input"),
+  saveMemory: document.querySelector("#save-memory"),
   runAgent: document.querySelector("#run-agent"),
   reply: document.querySelector("#agent-reply"),
   planBox: document.querySelector("#plan-box"),
@@ -406,12 +407,47 @@ function renderMemoryRecall(items) {
       (item) => `
         <div class="session-event">
           <strong>${escapeHtml(item.title || item.kind || "memory")}</strong>
-          <span>${escapeHtml(item.kind || "-")} · ${escapeHtml(formatTimestamp((item.ts || 0) * 1000))}</span>
+          <span>${escapeHtml(item.kind || "-")} · ${escapeHtml(formatTimestamp((item.ts || 0) * 1000))}${item.pinned ? " · pinned" : ""}</span>
           <code>${escapeHtml(item.text || "")}</code>
+          <div class="session-link-row">
+            <button class="secondary memory-use" data-title="${escapeHtml(item.title || "")}" data-text="${escapeHtml(item.text || "")}">프롬프트로</button>
+            <button class="secondary memory-pin" data-id="${escapeHtml(item.id || "")}" data-pinned="${item.pinned ? "0" : "1"}">${item.pinned ? "고정 해제" : "고정"}</button>
+          </div>
         </div>
       `,
     )
     .join("");
+  elements.memoryRecall.querySelectorAll(".memory-use").forEach((button) => {
+    button.addEventListener("click", () => {
+      const title = decodeHtml(button.dataset.title || "");
+      const text = decodeHtml(button.dataset.text || "");
+      if (elements.promptInput) {
+        elements.promptInput.value = title ? `${title}\n${text}` : text;
+      }
+      previewAgentRoute();
+      setStatus("기억을 프롬프트로 불러왔습니다.");
+    });
+  });
+  elements.memoryRecall.querySelectorAll(".memory-pin").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = decodeHtml(button.dataset.id || "");
+      const pinned = button.dataset.pinned === "1";
+      try {
+        const response = await fetch("/api/memory/pin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, pinned }),
+        });
+        const data = await response.json();
+        if (!data.ok) {
+          throw new Error(data.detail || data.error || "memory pin failed");
+        }
+        await refreshMemoryRecall(String(elements.promptInput?.value || "").trim());
+      } catch (error) {
+        elements.memoryRecall.textContent = String(error.message || error);
+      }
+    });
+  });
 }
 
 async function refreshMemoryRecall(query = "") {
@@ -468,6 +504,12 @@ function formatComputerUseAction(action) {
     return action.app || "";
   }
   return action.text || "";
+}
+
+function decodeHtml(text) {
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = text;
+  return textarea.value;
 }
 
 function summarizeComputerUseProgress(session) {
@@ -3033,6 +3075,32 @@ elements.fileInput.addEventListener("change", async (event) => {
 });
 
 elements.runAgent.addEventListener("click", runAgent);
+elements.saveMemory?.addEventListener("click", async () => {
+  const prompt = String(elements.promptInput?.value || "").trim();
+  if (!prompt) {
+    setStatus("저장할 내용을 먼저 입력해야 합니다.");
+    return;
+  }
+  try {
+    const response = await fetch("/api/memory/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "manual",
+        title: prompt.slice(0, 80),
+        text: prompt,
+      }),
+    });
+    const data = await response.json();
+    if (!data.ok) {
+      throw new Error(data.detail || data.error || "memory add failed");
+    }
+    await refreshMemoryRecall(prompt);
+    setStatus("현재 입력을 작업 기억에 저장했습니다.");
+  } catch (error) {
+    setStatus("기억 저장 실패", String(error.message || error));
+  }
+});
 elements.computerUseRunNext?.addEventListener("click", runNextComputerUseStep);
 elements.computerUseRunAll?.addEventListener("click", runAllComputerUseSteps);
 elements.promptInput?.addEventListener("keydown", (event) => {

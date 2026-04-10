@@ -245,6 +245,7 @@ def remember_memory(kind, title, text, metadata=None):
         "kind": str(kind or "note")[:40],
         "title": title or "Untitled memory",
         "text": text,
+        "pinned": False,
         "metadata": metadata or {},
     }
     MEMORY_ITEMS.insert(0, item)
@@ -264,6 +265,8 @@ def search_memory(query, limit=6):
     for item in MEMORY_ITEMS:
         haystack = f"{item.get('title', '')} {item.get('text', '')}".lower()
         score = 0.0
+        if item.get("pinned"):
+            score += 4.0
         for token in query_tokens:
             if token in haystack:
                 score += 1.0
@@ -282,13 +285,23 @@ def compact_memory_items(items):
     for item in items[:8]:
         compact.append(
             {
+                "id": item.get("id", ""),
                 "kind": item.get("kind", ""),
                 "title": item.get("title", "")[:160],
                 "text": item.get("text", "")[:700],
                 "ts": item.get("ts", 0),
+                "pinned": bool(item.get("pinned")),
             }
         )
     return compact
+
+
+def set_memory_pinned(memory_id, pinned):
+    for item in MEMORY_ITEMS:
+        if item.get("id") == memory_id:
+            item["pinned"] = bool(pinned)
+            return item
+    raise KeyError("memory not found")
 
 
 def session_snapshot():
@@ -1869,6 +1882,35 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": True, "result": result})
             except Exception as exc:
                 self._send_json({"ok": False, "error": "system_action_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/memory/add":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(body or "{}")
+                title = str(payload.get("title", "")).strip()
+                text = str(payload.get("text", "")).strip()
+                kind = str(payload.get("kind", "note")).strip() or "note"
+                if not text:
+                    raise ValueError("text is required")
+                remember_memory(kind, title or text[:80], text, {"source": "manual"})
+                self._send_json({"ok": True, "items": compact_memory_items(MEMORY_ITEMS)})
+            except Exception as exc:
+                self._send_json({"ok": False, "error": "memory_add_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/memory/pin":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(body or "{}")
+                memory_id = str(payload.get("id", "")).strip()
+                pinned = bool(payload.get("pinned", True))
+                if not memory_id:
+                    raise ValueError("id is required")
+                item = set_memory_pinned(memory_id, pinned)
+                self._send_json({"ok": True, "item": compact_memory_items([item])[0]})
+            except Exception as exc:
+                self._send_json({"ok": False, "error": "memory_pin_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         if self.path == "/api/computer-use/plan":
             try:

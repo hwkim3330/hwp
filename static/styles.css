@@ -77,6 +77,10 @@ input {
   gap: 8px;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .topbar-action,
 .topbar-file {
   display: inline-flex;
@@ -261,6 +265,91 @@ input {
   background: rgba(255, 255, 255, 0.92);
   padding: 0 14px;
   color: var(--ink);
+}
+
+.project-field select {
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 0 14px;
+  color: var(--ink);
+}
+
+.modal-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.24);
+  backdrop-filter: blur(12px);
+}
+
+.modal-card {
+  position: relative;
+  z-index: 1;
+  width: min(920px, calc(100vw - 32px));
+  border-radius: 24px;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.18);
+  padding: 22px;
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.modal-panel {
+  padding: 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(243, 247, 251, 0.94));
+  border: 1px solid rgba(17, 24, 39, 0.06);
+}
+
+.modal-panel h3 {
+  margin: 0 0 12px;
+}
+
+.template-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.template-card {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--ink);
+}
+
+.template-card strong {
+  font-size: 16px;
+}
+
+.template-card span {
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .live-activity {
@@ -1109,6 +1198,10 @@ textarea {
   }
 
   .project-brief-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-grid {
     grid-template-columns: 1fr;
   }
 

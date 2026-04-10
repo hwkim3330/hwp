@@ -10,6 +10,7 @@ const elements = {
   topTabSlides: document.querySelector("#top-tab-slides"),
   topbarRoute: document.querySelector("#topbar-route"),
   topbarStatus: document.querySelector("#topbar-status"),
+  settingsToggle: document.querySelector("#settings-toggle"),
   focusToggle: document.querySelector("#focus-toggle"),
   tabWriter: document.querySelector("#tab-writer"),
   tabNotes: document.querySelector("#tab-notes"),
@@ -108,6 +109,12 @@ const elements = {
   openFinder: document.querySelector("#open-finder"),
   openMonitor: document.querySelector("#open-monitor"),
   systemActionLog: document.querySelector("#system-action-log"),
+  appModal: document.querySelector("#app-modal"),
+  closeAppModal: document.querySelector("#close-app-modal"),
+  settingsModelProfile: document.querySelector("#settings-model-profile"),
+  settingsSearchDefault: document.querySelector("#settings-search-default"),
+  settingsSkipOnboarding: document.querySelector("#settings-skip-onboarding"),
+  templateCards: [...document.querySelectorAll(".template-card")],
   promptChips: [...document.querySelectorAll(".prompt-chip")],
 };
 
@@ -132,6 +139,11 @@ const state = {
     name: "Untitled Project",
     goal: "",
     focusMode: false,
+  },
+  preferences: {
+    onboardingDismissed: false,
+    defaultSearchEnabled: false,
+    defaultModelProfile: "balanced",
   },
 };
 
@@ -186,6 +198,32 @@ function updateProjectUi() {
   document.body.classList.toggle("focus-mode", Boolean(state.project?.focusMode));
   if (elements.dashboardPlan && goal && !elements.dashboardPlan.textContent.trim()) {
     elements.dashboardPlan.textContent = goal;
+  }
+}
+
+function openAppModal() {
+  elements.appModal?.classList.remove("hidden");
+}
+
+function closeAppModal() {
+  elements.appModal?.classList.add("hidden");
+}
+
+function syncPreferencesUi() {
+  if (elements.settingsModelProfile) {
+    elements.settingsModelProfile.value = state.preferences.defaultModelProfile || "balanced";
+  }
+  if (elements.settingsSearchDefault) {
+    elements.settingsSearchDefault.checked = Boolean(state.preferences.defaultSearchEnabled);
+  }
+  if (elements.settingsSkipOnboarding) {
+    elements.settingsSkipOnboarding.checked = Boolean(state.preferences.onboardingDismissed);
+  }
+  if (elements.modelProfile) {
+    elements.modelProfile.value = state.preferences.defaultModelProfile || "balanced";
+  }
+  if (elements.searchEnabled) {
+    elements.searchEnabled.checked = Boolean(state.preferences.defaultSearchEnabled);
   }
 }
 
@@ -263,6 +301,52 @@ function setWorkflowHint(message) {
     state.project.goal = elements.projectGoal.value;
     updateProjectUi();
   }
+}
+
+function applyTemplate(template) {
+  if (template === "research") {
+    state.project.name = "연구노트 패키지";
+    state.project.goal = "조사, 참고 링크, 문서 초안까지 한 번에 정리";
+    if (elements.promptInput) {
+      elements.promptInput.value = "연구노트를 완성형으로 작성해줘. 배경, 핵심 질문, 조사 요약, 참고 링크, 다음 액션을 포함해.";
+    }
+    if (elements.searchEnabled) {
+      elements.searchEnabled.checked = true;
+    }
+    if (elements.modelProfile) {
+      elements.modelProfile.value = "deep";
+    }
+  }
+  if (template === "report") {
+    state.project.name = "업무 보고 패키지";
+    state.project.goal = "요약, 핵심 내용, 일정표 중심 보고서 작성";
+    if (elements.promptInput) {
+      elements.promptInput.value = "보고서 형식으로 요약, 핵심 내용, 일정 표를 포함해 작성해줘.";
+    }
+    if (elements.searchEnabled) {
+      elements.searchEnabled.checked = false;
+    }
+    if (elements.modelProfile) {
+      elements.modelProfile.value = "balanced";
+    }
+  }
+  if (template === "slides") {
+    state.project.name = "발표 패키지";
+    state.project.goal = "문서와 슬라이드 초안을 같이 준비";
+    if (elements.promptInput) {
+      elements.promptInput.value = "현재 내용을 발표용 슬라이드 초안과 발표 메모까지 이어지게 정리해줘.";
+    }
+    if (elements.searchEnabled) {
+      elements.searchEnabled.checked = true;
+    }
+    if (elements.modelProfile) {
+      elements.modelProfile.value = "balanced";
+    }
+  }
+  updateProjectUi();
+  previewAgentRoute();
+  persistWorkspace();
+  closeAppModal();
 }
 
 function setLiveRoute(route, detail = "") {
@@ -2428,6 +2512,7 @@ function createWorkspaceSnapshot() {
     slides: state.slides,
     commandHistory: state.commandHistory,
     project: state.project,
+    preferences: state.preferences,
   };
 }
 
@@ -2483,6 +2568,13 @@ async function applyWorkspaceSnapshot(saved) {
       focusMode: Boolean(saved.project.focusMode),
     };
     updateProjectUi();
+  }
+  if (saved.preferences && typeof saved.preferences === "object") {
+    state.preferences = {
+      onboardingDismissed: Boolean(saved.preferences.onboardingDismissed),
+      defaultSearchEnabled: Boolean(saved.preferences.defaultSearchEnabled),
+      defaultModelProfile: String(saved.preferences.defaultModelProfile || "balanced"),
+    };
   }
   if (Array.isArray(saved.memory)) {
     await importWorkspaceMemories(saved.memory, true);
@@ -2972,6 +3064,10 @@ async function boot() {
   setWorkflowHint("문서 작업 버튼, 검색 포함 토글, 모델 프로필을 조합해 실행합니다.");
   previewAgentRoute();
   updateProjectUi();
+  syncPreferencesUi();
+  if (!state.preferences.onboardingDismissed) {
+    openAppModal();
+  }
   await applyStartupCommandFromUrl();
   if (elements.editorEngine) {
     elements.editorEngine.value = "native";
@@ -3226,6 +3322,32 @@ elements.projectGoal?.addEventListener("input", () => {
   persistWorkspace();
 });
 elements.focusToggle?.addEventListener("click", () => setFocusMode());
+elements.settingsToggle?.addEventListener("click", () => {
+  syncPreferencesUi();
+  openAppModal();
+});
+elements.closeAppModal?.addEventListener("click", () => {
+  state.preferences.onboardingDismissed = Boolean(elements.settingsSkipOnboarding?.checked);
+  persistWorkspace();
+  closeAppModal();
+});
+elements.settingsModelProfile?.addEventListener("change", () => {
+  state.preferences.defaultModelProfile = String(elements.settingsModelProfile.value || "balanced");
+  syncPreferencesUi();
+  persistWorkspace();
+});
+elements.settingsSearchDefault?.addEventListener("change", () => {
+  state.preferences.defaultSearchEnabled = Boolean(elements.settingsSearchDefault.checked);
+  syncPreferencesUi();
+  persistWorkspace();
+});
+elements.settingsSkipOnboarding?.addEventListener("change", () => {
+  state.preferences.onboardingDismissed = Boolean(elements.settingsSkipOnboarding.checked);
+  persistWorkspace();
+});
+elements.templateCards.forEach((button) => {
+  button.addEventListener("click", () => applyTemplate(button.dataset.template || ""));
+});
 elements.openBrowser?.addEventListener("click", () =>
   runSystemAction("open_app", { app: "Safari" }, "브라우저를 열었습니다.").catch((error) =>
     setStatus("시스템 액션 실패", String(error.message || error)),

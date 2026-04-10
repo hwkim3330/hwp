@@ -25,6 +25,7 @@
       </div>
       <div class="app-topbar-section app-topbar-right">
         <div class="topbar-tools">
+          <button id="settings-toggle" class="topbar-action">설정</button>
           <button id="focus-toggle" class="topbar-action">집중 모드</button>
           <button id="new-document" class="topbar-action">새 문서</button>
           <label class="topbar-file">
@@ -410,6 +411,57 @@
           <div id="planner-meta" class="reply planner-meta">플래너 정보 없음</div>
         </details>
       </aside>
+    </div>
+
+    <div id="app-modal" class="modal-shell hidden">
+      <div class="modal-backdrop"></div>
+      <section class="modal-card">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">Workspace Setup</p>
+            <h2>바로 시작</h2>
+          </div>
+          <button id="close-app-modal" class="topbar-action">닫기</button>
+        </div>
+        <div class="modal-grid">
+          <article class="modal-panel">
+            <h3>프로젝트 시작</h3>
+            <div class="template-grid">
+              <button class="template-card" data-template="research">
+                <strong>연구노트</strong>
+                <span>검색, 정리, 참고 링크까지 한 번에</span>
+              </button>
+              <button class="template-card" data-template="report">
+                <strong>보고서</strong>
+                <span>요약, 핵심 내용, 일정표 중심</span>
+              </button>
+              <button class="template-card" data-template="slides">
+                <strong>발표 패키지</strong>
+                <span>문서에서 슬라이드 초안까지 연결</span>
+              </button>
+            </div>
+          </article>
+          <article class="modal-panel">
+            <h3>기본 설정</h3>
+            <label class="project-field">
+              <span>기본 모델 프로필</span>
+              <select id="settings-model-profile">
+                <option value="balanced">균형형</option>
+                <option value="fast">빠른 응답</option>
+                <option value="deep">깊은 작성</option>
+              </select>
+            </label>
+            <label class="control-toggle">
+              <input id="settings-search-default" type="checkbox" />
+              <span>기본적으로 검색 포함</span>
+            </label>
+            <label class="control-toggle">
+              <input id="settings-skip-onboarding" type="checkbox" />
+              <span>다음부터 이 화면 숨기기</span>
+            </label>
+          </article>
+        </div>
+      </section>
     </div>
 
     <script type="module" src="/app.js"></script>

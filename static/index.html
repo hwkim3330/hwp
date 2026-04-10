@@ -25,6 +25,7 @@
       </div>
       <div class="app-topbar-section app-topbar-right">
         <div class="topbar-tools">
+          <button id="focus-toggle" class="topbar-action">집중 모드</button>
           <button id="new-document" class="topbar-action">새 문서</button>
           <label class="topbar-file">
             열기
@@ -82,9 +83,29 @@
             <h2>오피스 워크스테이션</h2>
           </div>
           <div class="workspace-head-actions">
+            <span id="project-pill" class="route-pill">Untitled Project</span>
             <span id="render-badge" class="badge">대기</span>
           </div>
         </div>
+        <section class="project-brief card">
+          <div class="project-brief-head">
+            <div>
+              <p class="eyebrow">Project</p>
+              <h2>현재 작업</h2>
+            </div>
+            <span id="project-focus-state" class="route-pill">Standard</span>
+          </div>
+          <div class="project-brief-grid">
+            <label class="project-field">
+              <span>프로젝트 이름</span>
+              <input id="project-name" type="text" placeholder="예: Gemma 4 연구노트 패키지" />
+            </label>
+            <label class="project-field">
+              <span>작업 목표</span>
+              <input id="project-goal" type="text" placeholder="예: 조사, 문서화, 발표 자료까지 한 번에 정리" />
+            </label>
+          </div>
+        </section>
         <section class="live-activity card">
           <div class="live-activity-main">
             <div>

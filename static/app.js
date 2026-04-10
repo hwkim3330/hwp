@@ -10,6 +10,7 @@ const elements = {
   topTabSlides: document.querySelector("#top-tab-slides"),
   topbarRoute: document.querySelector("#topbar-route"),
   topbarStatus: document.querySelector("#topbar-status"),
+  focusToggle: document.querySelector("#focus-toggle"),
   tabWriter: document.querySelector("#tab-writer"),
   tabNotes: document.querySelector("#tab-notes"),
   tabSheet: document.querySelector("#tab-sheet"),
@@ -47,6 +48,10 @@ const elements = {
   recentCommands: document.querySelector("#recent-commands"),
   memoryMeta: document.querySelector("#memory-meta"),
   memoryRecall: document.querySelector("#memory-recall"),
+  projectPill: document.querySelector("#project-pill"),
+  projectFocusState: document.querySelector("#project-focus-state"),
+  projectName: document.querySelector("#project-name"),
+  projectGoal: document.querySelector("#project-goal"),
   statusBox: document.querySelector("#status-box"),
   renderBadge: document.querySelector("#render-badge"),
   liveActivityTitle: document.querySelector("#live-activity-title"),
@@ -123,6 +128,11 @@ const state = {
   liveRoute: "auto",
   commandHistory: [],
   autosavedAt: 0,
+  project: {
+    name: "Untitled Project",
+    goal: "",
+    focusMode: false,
+  },
 };
 
 const STORAGE_KEY = "hwp-state-v1";
@@ -156,6 +166,35 @@ function setStatus(message, extra = "") {
   if (elements.liveActivityDetail) {
     elements.liveActivityDetail.textContent = extra || message;
   }
+}
+
+function updateProjectUi() {
+  const name = String(state.project?.name || "").trim() || "Untitled Project";
+  const goal = String(state.project?.goal || "").trim();
+  if (elements.projectPill) {
+    elements.projectPill.textContent = name;
+  }
+  if (elements.projectName && elements.projectName.value !== name) {
+    elements.projectName.value = name;
+  }
+  if (elements.projectGoal && elements.projectGoal.value !== goal) {
+    elements.projectGoal.value = goal;
+  }
+  if (elements.projectFocusState) {
+    elements.projectFocusState.textContent = state.project?.focusMode ? "Focus" : "Standard";
+  }
+  document.body.classList.toggle("focus-mode", Boolean(state.project?.focusMode));
+  if (elements.dashboardPlan && goal && !elements.dashboardPlan.textContent.trim()) {
+    elements.dashboardPlan.textContent = goal;
+  }
+}
+
+function setFocusMode(force) {
+  const next = typeof force === "boolean" ? force : !state.project.focusMode;
+  state.project.focusMode = next;
+  updateProjectUi();
+  persistWorkspace();
+  setStatus(next ? "집중 모드를 켰습니다." : "표준 작업 모드로 돌아왔습니다.");
 }
 
 function formatTimestamp(ts) {
@@ -218,6 +257,11 @@ function setWorkflowHint(message) {
   }
   if (elements.dashboardCapture) {
     elements.dashboardCapture.textContent = message;
+  }
+  if (!String(state.project?.goal || "").trim() && elements.projectGoal) {
+    elements.projectGoal.value = message.slice(0, 140);
+    state.project.goal = elements.projectGoal.value;
+    updateProjectUi();
   }
 }
 
@@ -2383,6 +2427,7 @@ function createWorkspaceSnapshot() {
     },
     slides: state.slides,
     commandHistory: state.commandHistory,
+    project: state.project,
   };
 }
 
@@ -2430,6 +2475,14 @@ async function applyWorkspaceSnapshot(saved) {
   }
   if (typeof saved.liveRoute === "string") {
     state.liveRoute = saved.liveRoute;
+  }
+  if (saved.project && typeof saved.project === "object") {
+    state.project = {
+      name: String(saved.project.name || "Untitled Project"),
+      goal: String(saved.project.goal || ""),
+      focusMode: Boolean(saved.project.focusMode),
+    };
+    updateProjectUi();
   }
   if (Array.isArray(saved.memory)) {
     await importWorkspaceMemories(saved.memory, true);
@@ -2918,6 +2971,7 @@ async function boot() {
   setRuntimeBadge("Command Ready");
   setWorkflowHint("문서 작업 버튼, 검색 포함 토글, 모델 프로필을 조합해 실행합니다.");
   previewAgentRoute();
+  updateProjectUi();
   await applyStartupCommandFromUrl();
   if (elements.editorEngine) {
     elements.editorEngine.value = "native";
@@ -3161,6 +3215,17 @@ elements.promptInput?.addEventListener("keydown", (event) => {
   }
 });
 elements.promptInput?.addEventListener("input", previewAgentRoute);
+elements.projectName?.addEventListener("input", () => {
+  state.project.name = String(elements.projectName.value || "").trim() || "Untitled Project";
+  updateProjectUi();
+  persistWorkspace();
+});
+elements.projectGoal?.addEventListener("input", () => {
+  state.project.goal = String(elements.projectGoal.value || "").trim();
+  updateProjectUi();
+  persistWorkspace();
+});
+elements.focusToggle?.addEventListener("click", () => setFocusMode());
 elements.openBrowser?.addEventListener("click", () =>
   runSystemAction("open_app", { app: "Safari" }, "브라우저를 열었습니다.").catch((error) =>
     setStatus("시스템 액션 실패", String(error.message || error)),

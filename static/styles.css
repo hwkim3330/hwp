@@ -27,6 +27,15 @@ body {
     linear-gradient(180deg, #f6f7f9, #eef1f5 58%, #e9edf2);
 }
 
+body.focus-mode .panel-left,
+body.focus-mode .panel-right {
+  display: none;
+}
+
+body.focus-mode .shell {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 button,
 textarea,
 input {
@@ -209,6 +218,49 @@ input {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
+}
+
+.project-brief {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 252, 0.95)),
+    linear-gradient(135deg, rgba(10, 132, 255, 0.04), rgba(48, 176, 199, 0.03));
+}
+
+.project-brief-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.project-brief-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.project-field {
+  display: grid;
+  gap: 8px;
+}
+
+.project-field span {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.project-field input {
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 0 14px;
+  color: var(--ink);
 }
 
 .live-activity {
@@ -1053,6 +1105,10 @@ textarea {
   }
 
   .dashboard-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .project-brief-grid {
     grid-template-columns: 1fr;
   }
 

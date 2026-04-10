@@ -721,6 +721,20 @@ ipcMain.handle("sound:play-cue", async (_event, kind) => {
   return playSystemCue(kind);
 });
 
+ipcMain.handle("workspace:open-command", async (_event, payload) => {
+  const prompt = encodeURIComponent(String(payload?.prompt || "").trim());
+  const route = encodeURIComponent(String(payload?.route || "document").trim() || "document");
+  const autorun = payload?.autorun ? "1" : "0";
+  const targetUrl = `${APP_URL}/?prompt=${prompt}&route=${route}&autorun=${autorun}`;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createMainWindow();
+  }
+  await mainWindow.loadURL(targetUrl);
+  mainWindow.show();
+  mainWindow.focus();
+  return { ok: true };
+});
+
 ipcMain.handle("cursor-overlay:toggle", async (_event, forceState) => {
   return { ok: true, enabled: toggleCursorOverlay(forceState) };
 });

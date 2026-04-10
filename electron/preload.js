@@ -34,4 +34,7 @@ contextBridge.exposeInMainWorld("desktopMonitor", {
   playCue(kind) {
     return ipcRenderer.invoke("sound:play-cue", kind);
   },
+  openWorkspaceCommand(payload) {
+    return ipcRenderer.invoke("workspace:open-command", payload);
+  },
 });

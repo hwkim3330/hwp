@@ -465,6 +465,10 @@
           </div>
           <div id="vision-chip" class="status-chip">분석 대기 중</div>
           <div id="vision-summary" class="meta">화면이나 카메라 입력이 준비되면 바로 분석할 수 있습니다.</div>
+          <div class="button-row">
+            <button id="send-to-browser" class="secondary">브라우저 계획으로 보내기</button>
+            <button id="send-to-writer" class="secondary">Writer로 보내기</button>
+          </div>
           <ul id="vision-actions" class="flat-list"></ul>
         </article>
 
@@ -523,6 +527,8 @@
       const visionChip = document.getElementById("vision-chip");
       const visionSummary = document.getElementById("vision-summary");
       const visionActions = document.getElementById("vision-actions");
+      const sendToBrowser = document.getElementById("send-to-browser");
+      const sendToWriter = document.getElementById("send-to-writer");
       let stream = null;
       let screenStream = null;
       let audioStream = null;
@@ -530,6 +536,8 @@
       let audioContext = null;
       let audioAnalyser = null;
       let audioTimer = null;
+      let latestVisionResult = null;
+      let latestVisionSource = "screen";
 
       function permissionLabel(status) {
         const map = {
@@ -634,12 +642,29 @@
           throw new Error(data.detail || data.error || "vision analyze failed");
         }
         const result = data.result || {};
+        latestVisionResult = result;
+        latestVisionSource = source;
         visionChip.textContent = `${useScreen ? "화면" : "카메라"} 분석 완료`;
         visionSummary.textContent = result.summary || result.reply || "분석 완료";
         renderVisionOverlay(overlay, result.regions || []);
         visionActions.innerHTML = (result.actions || [])
           .map((item) => `<li>${item}</li>`)
           .join("") || "<li>추가 액션 제안이 없습니다.</li>";
+      }
+
+      function buildWorkspacePrompt(route) {
+        const result = latestVisionResult || {};
+        const summary = result.summary || result.reply || "장면 분석 결과";
+        const actionText = Array.isArray(result.actions) && result.actions.length > 0
+          ? result.actions.map((item, index) => `${index + 1}. ${item}`).join("\n")
+          : "추가 액션 없음";
+        const regionText = Array.isArray(result.regions) && result.regions.length > 0
+          ? result.regions.map((item) => `${item.label} (${item.x.toFixed(1)}, ${item.y.toFixed(1)}, ${item.width.toFixed(1)}, ${item.height.toFixed(1)})`).join(", ")
+          : "영역 없음";
+        if (route === "computer_use") {
+          return `비전 분석 결과를 바탕으로 브라우저 작업 계획을 만들어줘.\n소스: ${latestVisionSource}\n요약: ${summary}\n주요 영역: ${regionText}\n다음 액션:\n${actionText}`;
+        }
+        return `비전 분석 결과를 한국어 작업노트로 정리해줘.\n소스: ${latestVisionSource}\n요약: ${summary}\n주요 영역: ${regionText}\n다음 액션:\n${actionText}`;
       }
 
       function stopCameraLab() {
@@ -836,6 +861,42 @@
           visionChip.textContent = "카메라 분석 실패";
           visionSummary.textContent = String(error.message || error);
         });
+      });
+
+      sendToBrowser.addEventListener("click", async () => {
+        if (!latestVisionResult) {
+          visionSummary.textContent = "먼저 화면이나 카메라를 분석해야 합니다.";
+          return;
+        }
+        visionSummary.textContent = "브라우저 계획으로 넘기는 중입니다.";
+        try {
+          await window.desktopMonitor.openWorkspaceCommand({
+            prompt: buildWorkspacePrompt("computer_use"),
+            route: "computer_use",
+            autorun: true,
+          });
+          visionSummary.textContent = "메인 워크스페이스에서 브라우저 계획을 시작했습니다.";
+        } catch (error) {
+          visionSummary.textContent = String(error.message || error);
+        }
+      });
+
+      sendToWriter.addEventListener("click", async () => {
+        if (!latestVisionResult) {
+          visionSummary.textContent = "먼저 화면이나 카메라를 분석해야 합니다.";
+          return;
+        }
+        visionSummary.textContent = "Writer로 넘기는 중입니다.";
+        try {
+          await window.desktopMonitor.openWorkspaceCommand({
+            prompt: buildWorkspacePrompt("document"),
+            route: "document",
+            autorun: true,
+          });
+          visionSummary.textContent = "메인 워크스페이스에서 문서 정리를 시작했습니다.";
+        } catch (error) {
+          visionSummary.textContent = String(error.message || error);
+        }
       });
     </script>
   </body>

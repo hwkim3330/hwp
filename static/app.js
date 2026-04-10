@@ -254,6 +254,29 @@ function previewAgentRoute() {
   }
 }
 
+async function applyStartupCommandFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const prompt = String(params.get("prompt") || "").trim();
+  const route = String(params.get("route") || "").trim();
+  const autorun = params.get("autorun") === "1";
+  if (!prompt && !route) {
+    return;
+  }
+  if (elements.promptInput && prompt) {
+    elements.promptInput.value = prompt;
+  }
+  previewAgentRoute();
+  if (route === "computer_use") {
+    setLiveRoute("computer_use", prompt);
+    if (autorun && prompt) {
+      await planComputerUse(prompt, { autorun: true });
+    }
+  } else if (autorun && prompt) {
+    await runAgent();
+  }
+  window.history.replaceState({}, "", "/");
+}
+
 function setEngineMeta(message) {
   if (elements.engineMeta) {
     elements.engineMeta.textContent = message;
@@ -2748,6 +2771,7 @@ async function boot() {
   setRuntimeBadge("Command Ready");
   setWorkflowHint("문서 작업 버튼, 검색 포함 토글, 모델 프로필을 조합해 실행합니다.");
   previewAgentRoute();
+  await applyStartupCommandFromUrl();
   if (elements.editorEngine) {
     elements.editorEngine.value = "native";
   }

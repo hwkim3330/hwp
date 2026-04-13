@@ -424,6 +424,11 @@ input {
   text-decoration: none;
 }
 
+.recovery-row code {
+  white-space: normal;
+  line-height: 1.5;
+}
+
 .live-activity {
   display: grid;
   gap: 10px;

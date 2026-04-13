@@ -123,6 +123,9 @@ const elements = {
   appRepoLink: document.querySelector("#app-repo-link"),
   releaseChecklist: document.querySelector("#release-checklist"),
   releaseChecklistMeta: document.querySelector("#release-checklist-meta"),
+  recoverySnapshots: document.querySelector("#recovery-snapshots"),
+  recoveryMeta: document.querySelector("#recovery-meta"),
+  clearRecoverySnapshots: document.querySelector("#clear-recovery-snapshots"),
   templateCards: [...document.querySelectorAll(".template-card")],
   promptChips: [...document.querySelectorAll(".prompt-chip")],
 };
@@ -157,12 +160,15 @@ const state = {
 };
 
 const STORAGE_KEY = "hwp-state-v1";
+const SNAPSHOT_HISTORY_KEY = "hwp-snapshots-v1";
 const MAX_COMMAND_HISTORY = 12;
+const MAX_RECOVERY_SNAPSHOTS = 8;
 let writerEditorSyncTimer = 0;
 let memoryRecallTimer = 0;
 window.__lastRuntime = {};
 window.__lastHealth = null;
 window.__appInfo = null;
+let lastSnapshotFingerprint = "";
 
 function installMeasureTextWidth() {
   let ctx = null;
@@ -396,6 +402,85 @@ function formatTimestamp(ts) {
     return "-";
   }
   return new Date(ts).toLocaleTimeString("ko-KR", { hour12: false });
+}
+
+function readRecoverySnapshots() {
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_HISTORY_KEY);
+    const items = JSON.parse(raw || "[]");
+    if (!Array.isArray(items)) {
+      return [];
+    }
+    return items.filter((item) => item && typeof item === "object" && item.snapshot);
+  } catch {
+    return [];
+  }
+}
+
+function writeRecoverySnapshots(items) {
+  try {
+    localStorage.setItem(SNAPSHOT_HISTORY_KEY, JSON.stringify(items.slice(0, MAX_RECOVERY_SNAPSHOTS)));
+  } catch {}
+}
+
+function snapshotSummary(snapshot) {
+  const writerCount = Array.isArray(snapshot?.writer?.paragraphs) ? snapshot.writer.paragraphs.length : 0;
+  const noteCount = String(snapshot?.noteText || "").trim() ? 1 : 0;
+  const sheetCount = Array.isArray(snapshot?.sheet?.rows) ? snapshot.sheet.rows.length : 0;
+  const slidesCount = Array.isArray(snapshot?.slides) ? snapshot.slides.length : 0;
+  return `Writer ${writerCount} · Notes ${noteCount} · Sheet ${sheetCount} · Slides ${slidesCount}`;
+}
+
+function renderRecoverySnapshots() {
+  if (!elements.recoverySnapshots) {
+    return;
+  }
+  const items = readRecoverySnapshots();
+  if (!items.length) {
+    elements.recoverySnapshots.textContent = "복구 가능한 스냅샷이 없습니다.";
+    if (elements.recoveryMeta) {
+      elements.recoveryMeta.textContent = "자동 저장이 쌓이면 최근 작업을 여기서 바로 되돌릴 수 있습니다.";
+    }
+    return;
+  }
+  elements.recoverySnapshots.innerHTML = items
+    .map(
+      (item) => `
+        <div class="setup-readiness-row recovery-row">
+          <strong>${escapeHtml(item.title || "자동 저장")}</strong>
+          <span class="setup-readiness-state is-ready">${escapeHtml(item.mode || "workspace")}</span>
+          <code>${escapeHtml(formatTimestamp(item.savedAt || 0))} · ${escapeHtml(snapshotSummary(item.snapshot || {}))}</code>
+          <div class="modal-link-row">
+            <button class="topbar-action modal-link recovery-restore" type="button" data-snapshot-id="${escapeHtml(item.id)}">복원</button>
+          </div>
+        </div>
+      `,
+    )
+    .join("");
+  elements.recoverySnapshots.querySelectorAll(".recovery-restore").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const snapshotId = button.dataset.snapshotId || "";
+      const target = readRecoverySnapshots().find((item) => item.id === snapshotId);
+      if (!target?.snapshot) {
+        setStatus("복구 스냅샷을 찾지 못했습니다.");
+        return;
+      }
+      await applyWorkspaceSnapshot(target.snapshot);
+      await refreshDocumentView();
+      renderCommandHistory();
+      renderSheet();
+      renderSlides();
+      updateProjectUi();
+      syncPreferencesUi();
+      previewAgentRoute();
+      persistWorkspace();
+      setStatus("복구 스냅샷을 적용했습니다.", formatTimestamp(target.savedAt || Date.now()));
+      closeAppModal();
+    });
+  });
+  if (elements.recoveryMeta) {
+    elements.recoveryMeta.textContent = `최근 ${items.length}개 자동 저장 스냅샷을 보관 중입니다.`;
+  }
 }
 
 function setBadge(message) {
@@ -2676,6 +2761,26 @@ function createWorkspaceSnapshot() {
   };
 }
 
+function storeRecoverySnapshot(snapshot) {
+  try {
+    const fingerprint = JSON.stringify(snapshot);
+    if (fingerprint === lastSnapshotFingerprint) {
+      return;
+    }
+    lastSnapshotFingerprint = fingerprint;
+    const items = readRecoverySnapshots();
+    items.unshift({
+      id: `snap-${Date.now()}`,
+      savedAt: Date.now(),
+      title: state.project?.name || state.fileName || "hwp workspace",
+      mode: state.mode,
+      snapshot,
+    });
+    writeRecoverySnapshots(items);
+    renderRecoverySnapshots();
+  } catch {}
+}
+
 function toWorkspaceFileName(fileName) {
   const base = String(fileName || "hwp-workspace").replace(/\.(hwp|hwpx|docx|xlsx|pptx|txt|md|csv|json)$/i, "");
   return `${base || "hwp-workspace"}.hwp-workspace.json`;
@@ -2744,7 +2849,9 @@ async function applyWorkspaceSnapshot(saved) {
 
 function persistWorkspace() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(createWorkspaceSnapshot()));
+    const snapshot = createWorkspaceSnapshot();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    storeRecoverySnapshot(snapshot);
     state.autosavedAt = Date.now();
     if (elements.topbarStatus) {
       elements.topbarStatus.textContent = `자동 저장 ${formatTimestamp(state.autosavedAt)}`;
@@ -2756,10 +2863,13 @@ async function restoreWorkspace() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
+      renderRecoverySnapshots();
       return;
     }
     const saved = JSON.parse(raw);
+    lastSnapshotFingerprint = JSON.stringify(saved);
     await applyWorkspaceSnapshot(saved);
+    renderRecoverySnapshots();
   } catch {}
 }
 
@@ -3509,6 +3619,15 @@ elements.settingsSearchDefault?.addEventListener("change", () => {
 elements.settingsSkipOnboarding?.addEventListener("change", () => {
   state.preferences.onboardingDismissed = Boolean(elements.settingsSkipOnboarding.checked);
   persistWorkspace();
+});
+elements.clearRecoverySnapshots?.addEventListener("click", () => {
+  try {
+    localStorage.removeItem(SNAPSHOT_HISTORY_KEY);
+    renderRecoverySnapshots();
+    setStatus("복구 스냅샷을 비웠습니다.");
+  } catch (error) {
+    setStatus("복구 스냅샷 정리 실패", String(error.message || error));
+  }
 });
 elements.templateCards.forEach((button) => {
   button.addEventListener("click", () => applyTemplate(button.dataset.template || ""));

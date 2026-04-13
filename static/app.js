@@ -1777,6 +1777,13 @@ function moveParallelList(items, fromIndex, toIndex) {
   return next;
 }
 
+function moveWriterObject(fromIndex, toIndex) {
+  if (!Array.isArray(state.writerObjects)) {
+    return;
+  }
+  state.writerObjects = moveParallelList(state.writerObjects, fromIndex, toIndex);
+}
+
 function syncWriterFromEditor(options = {}) {
   const { rerenderEditor = false, status = "" } = options;
   rebuildWriterFromParagraphItems(getWriterEditorValues());
@@ -1985,6 +1992,19 @@ async function parseDocxFile(file) {
   const paragraphs = [];
   const paragraphStyles = [];
   const writerObjects = [];
+  let currentList = null;
+
+  function flushCurrentList() {
+    if (currentList && Array.isArray(currentList.items) && currentList.items.length > 0) {
+      writerObjects.push({
+        id: `docx-list-${Date.now()}-${writerObjects.length}`,
+        kind: currentList.kind,
+        title: currentList.kind === "numbered" ? `번호 목록 ${writerObjects.length + 1}` : `목록 ${writerObjects.length + 1}`,
+        items: [...currentList.items],
+      });
+    }
+    currentList = null;
+  }
 
   [...body.children].forEach((node, index) => {
     const name = xmlName(node);
@@ -2007,22 +2027,23 @@ async function parseDocxFile(file) {
 
       const numPr = firstChildByName(pPr, "numPr");
       if (numPr) {
-        const prefix = /^\d+\.\s+/.test(text) ? "numbered" : "bullets";
-        writerObjects.push({
-          id: `docx-list-${Date.now()}-${index}`,
-          kind: prefix,
-          title: prefix === "numbered" ? `번호 목록 ${writerObjects.length + 1}` : `목록 ${writerObjects.length + 1}`,
-          items: [text.replace(/^[-•]\s+/, "").replace(/^\d+\.\s+/, "")],
-        });
+        const kind = /^\d+\.\s+/.test(text) ? "numbered" : "bullets";
+        if (!currentList || currentList.kind !== kind) {
+          flushCurrentList();
+          currentList = { kind, items: [] };
+        }
+        currentList.items.push(text.replace(/^[-•]\s+/, "").replace(/^\d+\.\s+/, ""));
         return;
       }
 
+      flushCurrentList();
       paragraphs.push(text);
       paragraphStyles.push(style);
       return;
     }
 
     if (name === "tbl") {
+      flushCurrentList();
       const rows = childrenByName(node, "tr").map((row) =>
         childrenByName(row, "tc").map((cell) => docxNodeText(cell)),
       ).filter((row) => row.length > 0);
@@ -2039,6 +2060,7 @@ async function parseDocxFile(file) {
       });
     }
   });
+  flushCurrentList();
 
   if (paragraphs.length === 0 && writerObjects.length === 0) {
     throw new Error("DOCX에서 읽을 문단이 없습니다.");
@@ -3355,6 +3377,8 @@ function renderWriterObjects() {
             <div class="writer-paragraph-head">
               <strong>${escapeHtml(item.title || `표 ${index + 1}`)}</strong>
               <div class="writer-paragraph-actions">
+                <button class="secondary writer-object-up" data-object-index="${index}">위로</button>
+                <button class="secondary writer-object-down" data-object-index="${index}">아래로</button>
                 <button class="secondary writer-table-row-add" data-object-index="${index}">행 추가</button>
                 <button class="secondary writer-table-col-add" data-object-index="${index}">열 추가</button>
                 <button class="secondary writer-object-delete" data-object-index="${index}">삭제</button>
@@ -3385,6 +3409,8 @@ function renderWriterObjects() {
           <div class="writer-paragraph-head">
             <strong>${escapeHtml(item.title || `목록 ${index + 1}`)}</strong>
             <div class="writer-paragraph-actions">
+              <button class="secondary writer-object-up" data-object-index="${index}">위로</button>
+              <button class="secondary writer-object-down" data-object-index="${index}">아래로</button>
               <button class="secondary writer-bullet-add" data-object-index="${index}">항목 추가</button>
               <button class="secondary writer-object-delete" data-object-index="${index}">삭제</button>
             </div>
@@ -3406,6 +3432,22 @@ function renderWriterObjects() {
     button.addEventListener("click", () => {
       const objectIndex = Number(button.dataset.objectIndex || "-1");
       state.writerObjects = state.writerObjects.filter((_, index) => index !== objectIndex);
+      renderWriterObjects();
+      persistWorkspace();
+    });
+  });
+  elements.writerObjects.querySelectorAll(".writer-object-up").forEach((button) => {
+    button.addEventListener("click", () => {
+      const objectIndex = Number(button.dataset.objectIndex || "-1");
+      moveWriterObject(objectIndex, objectIndex - 1);
+      renderWriterObjects();
+      persistWorkspace();
+    });
+  });
+  elements.writerObjects.querySelectorAll(".writer-object-down").forEach((button) => {
+    button.addEventListener("click", () => {
+      const objectIndex = Number(button.dataset.objectIndex || "-1");
+      moveWriterObject(objectIndex, objectIndex + 1);
       renderWriterObjects();
       persistWorkspace();
     });

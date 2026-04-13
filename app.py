@@ -28,6 +28,14 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "gemma4:latest")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "20"))
 LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "900"))
+MLX_EXPERIMENTAL_BASE_URL = os.environ.get("MLX_EXPERIMENTAL_BASE_URL", "http://127.0.0.1:8081/v1").rstrip("/")
+MLX_EXPERIMENTAL_MODEL = os.environ.get(
+    "MLX_EXPERIMENTAL_MODEL", "Jiunsong/supergemma4-26b-uncensored-mlx-4bit-v2"
+)
+MLX_EXPERIMENTAL_VENV = Path(os.environ.get("MLX_EXPERIMENTAL_VENV", str(ROOT / ".venv-mlx"))).expanduser()
+MLX_EXPERIMENTAL_SERVER = Path(
+    os.environ.get("MLX_EXPERIMENTAL_SERVER", str(MLX_EXPERIMENTAL_VENV / "bin" / "mlx_lm.server"))
+).expanduser()
 HWPFORGE_CMD = os.environ.get("HWPFORGE_CMD", "hwpforge")
 ENABLE_WEB_SEARCH = os.environ.get("ENABLE_WEB_SEARCH", "1") != "0"
 ENABLE_VISION_EXPERIMENTS = os.environ.get("ENABLE_VISION_EXPERIMENTS", "1") != "0"
@@ -765,6 +773,56 @@ def extract_json_object(text):
 
 def is_ollama_base_url():
     return "127.0.0.1:11434" in LLM_BASE_URL or "localhost:11434" in LLM_BASE_URL
+
+
+def resolve_llm_config(model_profile="balanced"):
+    profile = str(model_profile or "balanced").strip().lower()
+    if profile == "experimental":
+        return {
+            "profile": "experimental",
+            "label": "supergemma4 mlx",
+            "base_url": MLX_EXPERIMENTAL_BASE_URL,
+            "model": MLX_EXPERIMENTAL_MODEL,
+            "api_key": "",
+            "provider": "mlx",
+        }
+    return {
+        "profile": profile,
+        "label": "default",
+        "base_url": LLM_BASE_URL,
+        "model": LLM_MODEL,
+        "api_key": LLM_API_KEY,
+        "provider": "ollama" if is_ollama_base_url() else "openai-compatible",
+    }
+
+
+def is_ollama_config(config):
+    base_url = str(config.get("base_url", "")).rstrip("/")
+    return "127.0.0.1:11434" in base_url or "localhost:11434" in base_url
+
+
+def mlx_runtime_status():
+    status = {
+        "configured": MLX_EXPERIMENTAL_SERVER.is_file(),
+        "server": str(MLX_EXPERIMENTAL_SERVER),
+        "baseUrl": MLX_EXPERIMENTAL_BASE_URL,
+        "model": MLX_EXPERIMENTAL_MODEL,
+        "ready": False,
+        "detail": "MLX experimental runtime not reachable",
+    }
+    try:
+        req = request.Request(
+            f"{MLX_EXPERIMENTAL_BASE_URL}/models",
+            headers={"Content-Type": "application/json"},
+            method="GET",
+        )
+        with request.urlopen(req, timeout=2) as response:
+            raw = json.loads(response.read().decode("utf-8"))
+        status["ready"] = True
+        status["detail"] = f"experimental runtime ready · {(raw.get('data') or [{}])[0].get('id', MLX_EXPERIMENTAL_MODEL)}"
+    except Exception as exc:
+        status["detail"] = str(exc)
+    return status
 
 
 def validate_plan(plan):
@@ -1551,9 +1609,10 @@ def fallback_plan(user_prompt, document, workspace, reason, search_results=None)
     }
 
 
-def call_llm(user_prompt, document):
+def call_llm(user_prompt, document, model_profile="balanced"):
     search_results = []
     memory_results = search_memory(user_prompt, limit=6)
+    llm_config = resolve_llm_config(model_profile)
     if should_use_web_search(user_prompt):
         try:
             search_results = web_search(user_prompt, max_results=5)
@@ -1578,11 +1637,11 @@ def call_llm(user_prompt, document):
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_content},
     ]
-    if is_ollama_base_url():
-        return call_ollama_llm(messages), search_results, memory_results
+    if is_ollama_config(llm_config):
+        return call_ollama_llm(messages, llm_config), search_results, memory_results
 
     payload = {
-        "model": LLM_MODEL,
+        "model": llm_config["model"],
         "messages": messages,
         "temperature": 0.2,
         "max_tokens": LLM_MAX_TOKENS,
@@ -1590,11 +1649,11 @@ def call_llm(user_prompt, document):
     }
 
     headers = {"Content-Type": "application/json"}
-    if LLM_API_KEY:
-        headers["Authorization"] = f"Bearer {LLM_API_KEY}"
+    if llm_config["api_key"]:
+        headers["Authorization"] = f"Bearer {llm_config['api_key']}"
 
     req = request.Request(
-        f"{LLM_BASE_URL}/chat/completions",
+        f"{llm_config['base_url']}/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
         headers=headers,
         method="POST",
@@ -1606,9 +1665,9 @@ def call_llm(user_prompt, document):
     return validate_plan(json.loads(extract_json_object(content))), search_results, memory_results
 
 
-def call_ollama_json(messages):
+def call_ollama_json(messages, llm_config):
     payload = {
-        "model": LLM_MODEL,
+        "model": llm_config["model"],
         "messages": messages,
         "stream": False,
         "format": "json",
@@ -1618,7 +1677,7 @@ def call_ollama_json(messages):
         },
     }
     req = request.Request(
-        "http://127.0.0.1:11434/api/chat",
+        f"{llm_config['base_url'].replace('/v1', '')}/api/chat",
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -1630,8 +1689,8 @@ def call_ollama_json(messages):
     return json.loads(extract_json_object(content))
 
 
-def call_ollama_llm(messages):
-    return validate_plan(call_ollama_json(messages))
+def call_ollama_llm(messages, llm_config):
+    return validate_plan(call_ollama_json(messages, llm_config))
 
 
 def resolve_hwpforge_cmd():
@@ -1716,6 +1775,7 @@ def permission_registry():
 
 def tool_registry():
     hwpforge = hwpforge_status()
+    mlx_status = mlx_runtime_status()
     return [
         {
             "id": "writer_blocks",
@@ -1737,6 +1797,13 @@ def tool_registry():
             "category": "llm",
             "status": "ready" if is_ollama_base_url() else "partial",
             "detail": f"{LLM_MODEL} via {LLM_BASE_URL}",
+        },
+        {
+            "id": "mlx_experimental",
+            "label": "MLX Experimental",
+            "category": "llm",
+            "status": "ready" if mlx_status["ready"] else "partial",
+            "detail": mlx_status["detail"],
         },
         {
             "id": "vision_lab",
@@ -1784,9 +1851,11 @@ def tool_registry():
 
 
 def runtime_registry():
+    mlx_status = mlx_runtime_status()
     return {
         "session": {"id": SESSION_ID, "eventCount": len(SESSION_EVENTS)},
         "llm": {"model": LLM_MODEL, "baseUrl": LLM_BASE_URL, "ollama": is_ollama_base_url()},
+        "mlxExperimental": mlx_status,
         "onlyoffice": {"docsUrl": ONLYOFFICE_DOCS_URL, "sessions": len(ONLYOFFICE_SESSIONS)},
         "computerUse": {"sessions": len(BROWSER_USE_SESSIONS), "reference": browser_use_reference_status()},
         "memory": {"items": len(MEMORY_ITEMS), "reference": mempalace_reference_status()},
@@ -1917,6 +1986,7 @@ class Handler(SimpleHTTPRequestHandler):
                     "version": app_version(),
                     "model": LLM_MODEL,
                     "baseUrl": LLM_BASE_URL,
+                    "mlxExperimental": mlx_runtime_status(),
                     "planner": "llm+fallback",
                     "hwpforge": hwpforge_status(),
                     "onlyoffice": {"docsUrl": ONLYOFFICE_DOCS_URL, "sessions": len(ONLYOFFICE_SESSIONS)},
@@ -2172,6 +2242,7 @@ class Handler(SimpleHTTPRequestHandler):
             body = self.rfile.read(length).decode("utf-8")
             payload = json.loads(body)
             user_prompt = str(payload.get("prompt", "")).strip()
+            model_profile = str(payload.get("modelProfile", "balanced")).strip() or "balanced"
             document = payload.get("document", {})
             workspace = {
                 "mode": payload.get("mode", "writer"),
@@ -2183,9 +2254,9 @@ class Handler(SimpleHTTPRequestHandler):
                 raise ValueError("prompt is required")
             try:
                 llm_document = {**document, **workspace}
-                plan, search_results, memory_results = call_llm(user_prompt, llm_document)
+                plan, search_results, memory_results = call_llm(user_prompt, llm_document, model_profile)
                 plan = finalize_plan(workspace["mode"], user_prompt, document, workspace, plan)
-                meta = {"planner": "llm"}
+                meta = {"planner": "llm", "model_profile": model_profile}
                 if search_results:
                     meta["search_results"] = len(search_results)
                 if memory_results:

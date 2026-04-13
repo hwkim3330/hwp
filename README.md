@@ -86,6 +86,17 @@ export LLM_API_KEY=""
 기본값은 로컬 Ollama를 가정합니다. OpenAI 호환 서버라면 `LLM_BASE_URL`과 `LLM_API_KEY`만 바꾸면 됩니다.
 모델 서버가 없어도 앱은 동작하며, 이 경우 내장 오프라인 플래너가 기본 문서 초안을 생성합니다.
 
+### SuperGemma MLX 실험 런타임
+
+`Jiunsong/supergemma4-26b-uncensored-mlx-4bit-v2` 같은 MLX 모델은 별도 실험 런타임으로 붙일 수 있습니다.
+
+```bash
+cd /Users/parksik/hwp
+./scripts/start_supergemma4_mlx.sh
+```
+
+기본 포트는 `127.0.0.1:8081`이며, 앱의 모델 프로필에서 `SuperGemma MLX`를 선택하면 해당 런타임을 사용합니다.
+
 ## 구조
 
 - `app.py`: 정적 파일 서버 + 에이전트 플래너 API

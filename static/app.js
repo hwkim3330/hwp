@@ -1234,6 +1234,8 @@ function buildGuiPrompt(rawPrompt) {
     finalPrompt = `${finalPrompt}\n\n응답은 짧고 빠르게 작성해.`;
   } else if (effects.modelProfile === "deep") {
     finalPrompt = `${finalPrompt}\n\n더 길고 구조적으로 정리해.`;
+  } else if (effects.modelProfile === "experimental") {
+    finalPrompt = `${finalPrompt}\n\n실험 모델을 사용하되, 오피스 문서 형식은 보수적으로 유지해.`;
   }
   return { prompt: finalPrompt.trim(), effects };
 }
@@ -3242,6 +3244,7 @@ async function runAgent() {
   try {
     const payload = {
       prompt,
+      modelProfile: parsed.effects.modelProfile,
       document: getDocumentSummary(),
       mode: state.mode,
       noteText: elements.notesPad.value,

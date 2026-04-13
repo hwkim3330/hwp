@@ -31,6 +31,12 @@ contextBridge.exposeInMainWorld("desktopMonitor", {
   requestPermission(kind) {
     return ipcRenderer.invoke("permissions:request", kind);
   },
+  getAppInfo() {
+    return ipcRenderer.invoke("app:get-info");
+  },
+  openExternal(target) {
+    return ipcRenderer.invoke("app:open-external", target);
+  },
   playCue(kind) {
     return ipcRenderer.invoke("sound:play-cue", kind);
   },

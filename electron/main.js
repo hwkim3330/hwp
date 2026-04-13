@@ -322,6 +322,24 @@ function requestJson(url, method = "GET", body = null, timeoutMs = 1500) {
   });
 }
 
+async function getDesktopAppInfo() {
+  const [appInfo, permissions] = await Promise.all([
+    requestJson(`${APP_URL}/api/app-info`, "GET", null, 2000).catch(() => ({ ok: false })),
+    getPermissionSnapshot().catch(() => ({
+      camera: "unknown",
+      microphone: "unknown",
+      screen: "unknown",
+      accessibility: "unknown",
+      automation: "manual",
+    })),
+  ]);
+  return {
+    ok: Boolean(appInfo?.ok),
+    app: appInfo?.app || null,
+    permissions,
+  };
+}
+
 function waitForServer(url, timeoutMs = 30000) {
   const start = Date.now();
   return new Promise((resolve, reject) => {
@@ -715,6 +733,24 @@ ipcMain.handle("permissions:get-status", async () => {
 
 ipcMain.handle("permissions:request", async (_event, kind) => {
   return requestPermission(kind);
+});
+
+ipcMain.handle("app:get-info", async () => {
+  return getDesktopAppInfo();
+});
+
+ipcMain.handle("app:open-external", async (_event, target) => {
+  const linkMap = {
+    releases: "https://github.com/hwkim3330/hwp/releases",
+    repo: "https://github.com/hwkim3330/hwp",
+    privacy: "x-apple.systempreferences:com.apple.preference.security",
+  };
+  const url = linkMap[target] || String(target || "");
+  if (!url) {
+    throw new Error("missing external target");
+  }
+  await shell.openExternal(url);
+  return { ok: true, target: url };
 });
 
 ipcMain.handle("sound:play-cue", async (_event, kind) => {

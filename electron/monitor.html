@@ -410,6 +410,19 @@
             <button id="cue-alert" class="preset-button" type="button">경고 사운드</button>
           </div>
         </article>
+
+        <article class="card wide">
+          <div class="label">Release / Onboarding</div>
+          <div id="release-value" class="value">v--</div>
+          <div id="release-meta" class="meta">앱 버전과 최신 릴리스를 확인하는 중</div>
+          <div id="release-checks" class="permission-grid"></div>
+          <div class="preset-grid">
+            <button id="open-releases" class="preset-button" type="button">릴리스 열기</button>
+            <button id="open-repo" class="preset-button" type="button">저장소 열기</button>
+            <button id="open-privacy" class="preset-button" type="button">권한 설정</button>
+            <button id="refresh-app-info" class="preset-button" type="button">상태 새로고침</button>
+          </div>
+        </article>
       </section>
 
       <div class="footer">가능한 수치만 안정적으로 표시합니다. GPU 실시간 퍼센트와 ANE 사용률은 현재 공개 경로 기준 제한이 있습니다.</div>
@@ -447,6 +460,13 @@
       const sensorMeta = document.getElementById("sensor-meta");
       const cueSuccess = document.getElementById("cue-success");
       const cueAlert = document.getElementById("cue-alert");
+      const releaseValue = document.getElementById("release-value");
+      const releaseMeta = document.getElementById("release-meta");
+      const releaseChecks = document.getElementById("release-checks");
+      const openReleases = document.getElementById("open-releases");
+      const openRepo = document.getElementById("open-repo");
+      const openPrivacy = document.getElementById("open-privacy");
+      const refreshAppInfo = document.getElementById("refresh-app-info");
       let cursorOverlayEnabled = false;
 
       for (let index = 0; index < 16; index += 1) {
@@ -542,6 +562,68 @@
           sensorMeta.textContent = typeof lidAngle.angle === "number"
             ? `맥북 각도 ${lidAngle.angle.toFixed(1)}° · ${lidAngle.command || "외부 브리지"}`
             : `기울기 브리지는 감지됐지만 값이 아직 없습니다.`;
+        }
+      }
+
+      function renderReleaseChecks(app, permissions = {}) {
+        const checks = [
+          {
+            title: "업데이트",
+            state: app?.updateAvailable ? "주의" : "정상",
+            detail: app?.updateAvailable ? `새 릴리스 ${app?.latestRelease?.tag || "-"}` : `현재 ${app?.version || "-"}`,
+          },
+          {
+            title: "서명",
+            state: app?.packaging?.signed ? "정상" : "대기",
+            detail: app?.packaging?.signed ? "서명 완료" : "ad-hoc 또는 미서명",
+          },
+          {
+            title: "화면 기록",
+            state: permissions.screen === "granted" ? "정상" : "확인",
+            detail: permissions.screen === "granted" ? "허용됨" : permissionLabel(permissions.screen),
+          },
+          {
+            title: "접근성",
+            state: permissions.accessibility === "granted" ? "정상" : "확인",
+            detail: permissions.accessibility === "granted" ? "허용됨" : permissionLabel(permissions.accessibility),
+          },
+        ];
+        releaseChecks.innerHTML = checks
+          .map(
+            (item) => `
+              <div class="permission-item">
+                <div class="permission-head">
+                  <strong>${item.title}</strong>
+                  <span>${item.state}</span>
+                </div>
+                <div class="permission-state">${item.detail}</div>
+              </div>
+            `,
+          )
+          .join("");
+      }
+
+      async function refreshAppInfoCard() {
+        releaseMeta.textContent = "앱 상태를 확인하는 중...";
+        try {
+          const payload = await window.desktopMonitor.getAppInfo();
+          const app = payload?.app || null;
+          const permissions = payload?.permissions || {};
+          if (!app) {
+            releaseValue.textContent = "v--";
+            releaseMeta.textContent = "앱 상태를 불러오지 못했습니다.";
+            renderReleaseChecks(null, permissions);
+            return;
+          }
+          releaseValue.textContent = `v${app.version || "-"}`;
+          releaseMeta.textContent = app.updateAvailable
+            ? `새 릴리스 ${app.latestRelease?.tag || "-"} 있음 · 지금은 서명/노타리제이션 단계가 남아 있습니다.`
+            : `최신 릴리스 ${app.latestRelease?.tag || app.version || "-"} · 공개 배포 전 서명과 노타리제이션 필요`;
+          renderReleaseChecks(app, permissions);
+        } catch (error) {
+          releaseValue.textContent = "v?";
+          releaseMeta.textContent = String(error.message || error);
+          renderReleaseChecks(null, {});
         }
       }
 
@@ -655,6 +737,11 @@
       window.desktopMonitor.getPermissionStatus().then((result) => {
         renderPermissions(result?.permissions || {}, {});
       });
+      openReleases.addEventListener("click", () => window.desktopMonitor.openExternal("releases"));
+      openRepo.addEventListener("click", () => window.desktopMonitor.openExternal("repo"));
+      openPrivacy.addEventListener("click", () => window.desktopMonitor.openExternal("privacy"));
+      refreshAppInfo.addEventListener("click", () => refreshAppInfoCard());
+      refreshAppInfoCard();
     </script>
   </body>
 </html>

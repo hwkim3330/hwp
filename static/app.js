@@ -142,6 +142,7 @@ const state = {
   mode: "writer",
   noteText: "",
   writerObjects: [],
+  writerParagraphStyles: [],
   sheetColumns: [...SHEET_COLUMNS],
   sheetRows: [],
   slides: [],
@@ -173,6 +174,15 @@ window.__lastRuntime = {};
 window.__lastHealth = null;
 window.__appInfo = null;
 let lastSnapshotFingerprint = "";
+
+function normalizeWriterParagraphStyles(count) {
+  const size = Math.max(0, Number(count || 0));
+  const current = Array.isArray(state.writerParagraphStyles) ? state.writerParagraphStyles : [];
+  state.writerParagraphStyles = Array.from({ length: size }, (_, index) => {
+    const value = String(current[index] || "body");
+    return ["body", "heading1", "heading2", "heading3"].includes(value) ? value : "body";
+  });
+}
 
 function installMeasureTextWidth() {
   let ctx = null;
@@ -1734,6 +1744,8 @@ function replaceWriterWithText(text) {
 
 function rebuildWriterFromParagraphItems(items) {
   const paragraphs = (items || []).map((item) => String(item || "").trim()).filter(Boolean);
+  normalizeWriterParagraphStyles(paragraphs.length);
+  state.writerParagraphStyles = state.writerParagraphStyles.slice(0, paragraphs.length);
   replaceWriterWithText(paragraphs.join("\n\n"));
   persistWorkspace();
 }
@@ -1746,6 +1758,16 @@ function getWriterEditorValues() {
 }
 
 function moveListItem(items, fromIndex, toIndex) {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) {
+    return items;
+  }
+  const next = [...items];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  return next;
+}
+
+function moveParallelList(items, fromIndex, toIndex) {
   if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) {
     return items;
   }
@@ -1796,11 +1818,16 @@ function insertWriterTemplate(kind) {
   }
   if (kind === "heading") {
     appendWriterText("제목");
+    normalizeWriterParagraphStyles(getDocumentSummary().paragraphs.length);
+    if (state.writerParagraphStyles.length > 0) {
+      state.writerParagraphStyles[state.writerParagraphStyles.length - 1] = "heading1";
+    }
     persistWorkspace();
     return;
   }
   if (kind === "paragraph") {
     appendWriterText("새 문단 내용을 입력하세요.");
+    normalizeWriterParagraphStyles(getDocumentSummary().paragraphs.length);
     persistWorkspace();
     return;
   }
@@ -2085,16 +2112,51 @@ function toIsoDate(value = new Date()) {
 async function buildDocxBytes() {
   const summary = getDocumentSummary();
   const paragraphs = summary.paragraphs
-    .map((item) => String(item.text || "").trim())
-    .filter(Boolean);
+    .map((item, index) => ({
+      text: String(item.text || "").trim(),
+      style: state.writerParagraphStyles[index] || "body",
+    }))
+    .filter((item) => item.text);
   const zip = new JSZip();
   const created = toIsoDate();
-  const bodyXml = (paragraphs.length ? paragraphs : [""])
-    .map(
-      (text) =>
-        `<w:p><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`,
-    )
+  const paragraphXml = (paragraphs.length ? paragraphs : [{ text: "", style: "body" }])
+    .map(({ text, style }) => {
+      const styleXml = style === "heading1"
+        ? `<w:pPr><w:pStyle w:val="Heading1"/></w:pPr>`
+        : style === "heading2"
+          ? `<w:pPr><w:pStyle w:val="Heading2"/></w:pPr>`
+          : style === "heading3"
+            ? `<w:pPr><w:pStyle w:val="Heading3"/></w:pPr>`
+            : "";
+      return `<w:p>${styleXml}<w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+    })
     .join("");
+  const objectXml = (state.writerObjects || [])
+    .map((item) => {
+      if (item.kind === "table") {
+        const headers = Array.isArray(item.headers) ? item.headers : [];
+        const rows = Array.isArray(item.rows) ? item.rows : [];
+        const allRows = headers.length ? [headers, ...rows] : rows;
+        const tableRowsXml = allRows
+          .map((row, rowIndex) => `<w:tr>${row.map((cell) => `<w:tc><w:p><w:r><w:t xml:space="preserve">${escapeXml(cell)}</w:t></w:r></w:p></w:tc>`).join("")}</w:tr>`)
+          .join("");
+        const titleXml = item.title ? `<w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t xml:space="preserve">${escapeXml(item.title)}</w:t></w:r></w:p>` : "";
+        return `${titleXml}<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>${tableRowsXml}</w:tbl>`;
+      }
+      if (item.kind === "bullets" || item.kind === "numbered") {
+        const titleXml = item.title ? `<w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t xml:space="preserve">${escapeXml(item.title)}</w:t></w:r></w:p>` : "";
+        const itemsXml = (item.items || [])
+          .map((bullet, index) => {
+            const prefix = item.kind === "numbered" ? `${index + 1}. ` : "• ";
+            return `<w:p><w:r><w:t xml:space="preserve">${escapeXml(`${prefix}${bullet}`)}</w:t></w:r></w:p>`;
+          })
+          .join("");
+        return `${titleXml}${itemsXml}`;
+      }
+      return "";
+    })
+    .join("");
+  const bodyXml = `${paragraphXml}${objectXml}`;
   zip.file(
     "[Content_Types].xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -2104,6 +2166,7 @@ async function buildDocxBytes() {
   <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
   <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
 </Types>`,
   );
   zip.folder("_rels")?.file(
@@ -2134,6 +2197,33 @@ async function buildDocxBytes() {
 </cp:coreProperties>`,
   );
   zip.folder("word")?.file(
+    "styles.xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+    <w:name w:val="Normal"/>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading1">
+    <w:name w:val="heading 1"/>
+    <w:basedOn w:val="Normal"/>
+    <w:qFormat/>
+    <w:rPr><w:b/><w:sz w:val="32"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading2">
+    <w:name w:val="heading 2"/>
+    <w:basedOn w:val="Normal"/>
+    <w:qFormat/>
+    <w:rPr><w:b/><w:sz w:val="28"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading3">
+    <w:name w:val="heading 3"/>
+    <w:basedOn w:val="Normal"/>
+    <w:qFormat/>
+    <w:rPr><w:b/><w:sz w:val="24"/></w:rPr>
+  </w:style>
+</w:styles>`,
+  );
+  zip.folder("word")?.file(
     "document.xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 wp14">
@@ -2149,7 +2239,9 @@ async function buildDocxBytes() {
   zip.folder("word")?.folder("_rels")?.file(
     "document.xml.rels",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`,
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
   );
   return zip.generateAsync({ type: "uint8array" });
 }
@@ -2821,6 +2913,7 @@ function createWorkspaceSnapshot() {
     fileName: state.fileName,
     writer: getWriterSnapshot(),
     writerObjects: state.writerObjects,
+    writerParagraphStyles: state.writerParagraphStyles,
     promptInput: elements.promptInput?.value || "",
     liveRoute: state.liveRoute,
     noteText: elements.notesPad.value,
@@ -2881,6 +2974,9 @@ async function applyWorkspaceSnapshot(saved) {
   }
   if (Array.isArray(saved.writerObjects)) {
     state.writerObjects = saved.writerObjects;
+  }
+  if (Array.isArray(saved.writerParagraphStyles)) {
+    state.writerParagraphStyles = saved.writerParagraphStyles.map((item) => String(item || "body"));
   }
   if (saved.sheet?.rows && Array.isArray(saved.sheet.rows)) {
     if (Array.isArray(saved.sheet.columns) && saved.sheet.columns.length > 0) {
@@ -3068,6 +3164,7 @@ function renderWriterEditor(document) {
     return;
   }
   const paragraphs = document?.paragraphs || [];
+  normalizeWriterParagraphStyles(paragraphs.length);
   if (paragraphs.length === 0) {
     elements.writerEditor.innerHTML = "<div class='writer-paragraph-card'><strong>문단 없음</strong><span>문단 추가로 시작할 수 있습니다.</span></div>";
     return;
@@ -3079,6 +3176,12 @@ function renderWriterEditor(document) {
           <div class="writer-paragraph-head">
             <strong>문단 ${index + 1}</strong>
             <div class="writer-paragraph-actions">
+              <select class="writer-style-select" data-index="${index}">
+                <option value="body" ${state.writerParagraphStyles[index] === "body" ? "selected" : ""}>본문</option>
+                <option value="heading1" ${state.writerParagraphStyles[index] === "heading1" ? "selected" : ""}>제목 1</option>
+                <option value="heading2" ${state.writerParagraphStyles[index] === "heading2" ? "selected" : ""}>제목 2</option>
+                <option value="heading3" ${state.writerParagraphStyles[index] === "heading3" ? "selected" : ""}>제목 3</option>
+              </select>
               <button class="secondary writer-move-up" data-index="${index}">위로</button>
               <button class="secondary writer-move-down" data-index="${index}">아래로</button>
               <button class="secondary writer-duplicate-paragraph" data-index="${index}">복제</button>
@@ -3102,11 +3205,23 @@ function renderWriterEditor(document) {
       syncWriterFromEditor();
     });
   });
+  elements.writerEditor.querySelectorAll(".writer-style-select").forEach((select) => {
+    select.addEventListener("change", () => {
+      const targetIndex = Number(select.dataset.index || "-1");
+      if (targetIndex < 0) {
+        return;
+      }
+      normalizeWriterParagraphStyles(paragraphs.length);
+      state.writerParagraphStyles[targetIndex] = String(select.value || "body");
+      persistWorkspace();
+    });
+  });
   elements.writerEditor.querySelectorAll(".writer-delete-paragraph").forEach((button) => {
     button.addEventListener("click", async () => {
       const targetIndex = Number(button.dataset.index || "-1");
       const values = getWriterEditorValues()
         .filter((_, index) => index !== targetIndex);
+      state.writerParagraphStyles = state.writerParagraphStyles.filter((_, index) => index !== targetIndex);
       rebuildWriterFromParagraphItems(values);
       await refreshDocumentView();
       setStatus("문단을 삭제했습니다.");
@@ -3120,6 +3235,7 @@ function renderWriterEditor(document) {
         return;
       }
       values.splice(targetIndex + 1, 0, values[targetIndex]);
+      state.writerParagraphStyles.splice(targetIndex + 1, 0, state.writerParagraphStyles[targetIndex] || "body");
       rebuildWriterFromParagraphItems(values);
       await refreshDocumentView();
       setStatus("문단을 복제했습니다.");
@@ -3129,6 +3245,7 @@ function renderWriterEditor(document) {
     button.addEventListener("click", async () => {
       const targetIndex = Number(button.dataset.index || "-1");
       const values = moveListItem(getWriterEditorValues(), targetIndex, targetIndex - 1);
+      state.writerParagraphStyles = moveParallelList(state.writerParagraphStyles, targetIndex, targetIndex - 1);
       rebuildWriterFromParagraphItems(values);
       await refreshDocumentView();
       setStatus("문단을 위로 이동했습니다.");
@@ -3138,6 +3255,7 @@ function renderWriterEditor(document) {
     button.addEventListener("click", async () => {
       const targetIndex = Number(button.dataset.index || "-1");
       const values = moveListItem(getWriterEditorValues(), targetIndex, targetIndex + 1);
+      state.writerParagraphStyles = moveParallelList(state.writerParagraphStyles, targetIndex, targetIndex + 1);
       rebuildWriterFromParagraphItems(values);
       await refreshDocumentView();
       setStatus("문단을 아래로 이동했습니다.");

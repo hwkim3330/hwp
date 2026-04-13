@@ -1178,6 +1178,15 @@ button.secondary {
   gap: 8px;
 }
 
+.writer-style-select {
+  min-width: 92px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 10px;
+}
+
 .writer-paragraph-input {
   min-height: 110px;
   margin: 0;

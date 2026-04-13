@@ -36,8 +36,9 @@
     "electron-builder": "^26.8.1"
   },
   "build": {
-    "appId": "com.hwkim.officeagentstaff",
+    "appId": "com.hwkim.hwp",
     "productName": "hwp",
+    "artifactName": "hwp-${version}-${arch}.${ext}",
     "directories": {
       "output": "dist-electron"
     },

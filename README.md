@@ -21,6 +21,9 @@
 - 현재 탭 기준 모드별 에이전트 생성
 - 브라우저 로컬 저장 복원
 - `browser-use` 참조 기반 `Computer Use` 브라우저 계획/세션/단계 실행
+- 작업 기억 자동 저장 / 고정 / 재사용 / 워크스페이스 패키지 포함
+- 프로젝트 이름 / 목표 / 집중 모드
+- 첫 실행 온보딩 / 시작 템플릿 / 기본 설정 시트
 
 ## 실행
 
@@ -47,6 +50,7 @@ npm run desktop
 - `Vision Lab` 창에서 Head Pointer / 외장 카메라 / lid angle 실험 구조 확인
 - GPU 모델 표시
 - NPU/ANE 사용량은 현재 Electron 빌드에서 측정 불가
+- 첫 실행 시 권한/준비 상태 점검 시트 표시
 
 ## macOS 패키징
 
@@ -56,6 +60,7 @@ npm run package:mac
 ```
 
 빌드 결과물은 `dist-electron/`에 생성됩니다.
+현재 앱 식별자는 `com.hwkim.hwp`입니다.
 
 ## GitHub Releases 배포
 

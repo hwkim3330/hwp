@@ -114,6 +114,8 @@ const elements = {
   settingsModelProfile: document.querySelector("#settings-model-profile"),
   settingsSearchDefault: document.querySelector("#settings-search-default"),
   settingsSkipOnboarding: document.querySelector("#settings-skip-onboarding"),
+  setupReadiness: document.querySelector("#setup-readiness"),
+  setupReadinessMeta: document.querySelector("#setup-readiness-meta"),
   templateCards: [...document.querySelectorAll(".template-card")],
   promptChips: [...document.querySelectorAll(".prompt-chip")],
 };
@@ -151,6 +153,8 @@ const STORAGE_KEY = "hwp-state-v1";
 const MAX_COMMAND_HISTORY = 12;
 let writerEditorSyncTimer = 0;
 let memoryRecallTimer = 0;
+window.__lastRuntime = {};
+window.__lastHealth = null;
 
 function installMeasureTextWidth() {
   let ctx = null;
@@ -224,6 +228,53 @@ function syncPreferencesUi() {
   }
   if (elements.searchEnabled) {
     elements.searchEnabled.checked = Boolean(state.preferences.defaultSearchEnabled);
+  }
+}
+
+function renderSetupReadiness(runtime = {}, health = null) {
+  if (!elements.setupReadiness) {
+    return;
+  }
+  const rows = [
+    {
+      label: "LLM",
+      state: health?.model ? "ready" : "offline",
+      detail: health?.model || runtime?.llm?.model || "모델 확인 필요",
+    },
+    {
+      label: "HWPX",
+      state: health?.hwpforge?.available ? "ready" : "offline",
+      detail: health?.hwpforge?.available ? (health?.hwpforge?.command || "hwpforge") : "엔진 확인 필요",
+    },
+    {
+      label: "Browser",
+      state: runtime?.computerUse?.reference?.available ? "ready" : "partial",
+      detail: runtime?.computerUse?.reference?.detail || "browser-use reference unavailable",
+    },
+    {
+      label: "Memory",
+      state: runtime?.memory?.reference?.available ? "ready" : "partial",
+      detail: runtime?.memory?.reference?.detail || "mempalace reference unavailable",
+    },
+    {
+      label: "OOXML",
+      state: runtime?.onlyoffice?.docsUrl ? "ready" : "partial",
+      detail: runtime?.onlyoffice?.docsUrl || "ONLYOFFICE bridge unavailable",
+    },
+  ];
+  elements.setupReadiness.innerHTML = rows
+    .map(
+      (item) => `
+        <div class="setup-readiness-row">
+          <strong>${escapeHtml(item.label)}</strong>
+          <span class="setup-readiness-state is-${escapeHtml(item.state)}">${escapeHtml(item.state)}</span>
+          <code>${escapeHtml(item.detail)}</code>
+        </div>
+      `,
+    )
+    .join("");
+  if (elements.setupReadinessMeta) {
+    elements.setupReadinessMeta.textContent = `LLM ${health?.model || runtime?.llm?.model || "-"} · Memory ${runtime?.memory?.items ?? 0} · Browser ${runtime?.computerUse?.sessions ?? 0}`;
   }
 }
 
@@ -803,6 +854,7 @@ async function refreshAgentHealth() {
     if (elements.dashboardNow) {
       elements.dashboardNow.textContent = `모델 ${health.model || "unknown"} · HWPX ${health.hwpforge?.available ? "ready" : "offline"} · OOXML ${health.onlyoffice?.sessions ?? 0} · Browser ${health.computerUse?.sessions ?? 0} · Memory ${health.memory?.items ?? 0}`;
     }
+    window.__lastHealth = health;
   } catch (error) {
     elements.capLlm.textContent = "offline";
     elements.capLlmMeta.textContent = "health check failed";
@@ -817,6 +869,7 @@ async function refreshAgentHealth() {
     setEngineMeta(String(error.message || error));
     setRuntimeBadge("Offline");
   }
+  renderSetupReadiness(window.__lastRuntime || {}, window.__lastHealth || null);
 }
 
 function renderRegistryRows(target, items, emptyText) {
@@ -920,6 +973,7 @@ async function refreshRuntimeRegistry() {
     if (elements.computerUseMeta) {
       elements.computerUseMeta.textContent = `browser-use reference: ${data.runtime?.computerUse?.reference?.detail || "-"} | sessions ${data.runtime?.computerUse?.sessions ?? 0}`;
     }
+    window.__lastRuntime = data.runtime || {};
   } catch (error) {
     if (elements.toolRegistry) {
       elements.toolRegistry.textContent = "도구 레지스트리 로드 실패";
@@ -928,6 +982,7 @@ async function refreshRuntimeRegistry() {
       elements.permissionRegistry.textContent = String(error.message || error);
     }
   }
+  renderSetupReadiness(window.__lastRuntime || {}, window.__lastHealth || null);
 }
 
 async function refreshSessionLog() {

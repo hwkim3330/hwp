@@ -352,6 +352,52 @@ input {
   line-height: 1.45;
 }
 
+.setup-readiness {
+  display: grid;
+  gap: 10px;
+}
+
+.setup-readiness-row {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(17, 24, 39, 0.06);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.setup-readiness-row strong {
+  font-size: 13px;
+}
+
+.setup-readiness-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.setup-readiness-state.is-ready {
+  background: rgba(46, 163, 87, 0.12);
+  color: #0d7a37;
+}
+
+.setup-readiness-state.is-partial {
+  background: rgba(255, 159, 10, 0.14);
+  color: #b86a00;
+}
+
+.setup-readiness-state.is-offline {
+  background: rgba(185, 28, 28, 0.12);
+  color: #b91c1c;
+}
+
 .live-activity {
   display: grid;
   gap: 10px;

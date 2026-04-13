@@ -19,6 +19,7 @@ const elements = {
   tabSlides: document.querySelector("#tab-slides"),
   insertHeading: document.querySelector("#insert-heading"),
   insertParagraph: document.querySelector("#insert-paragraph"),
+  insertBullets: document.querySelector("#insert-bullets"),
   insertTable: document.querySelector("#insert-table"),
   addWriterParagraph: document.querySelector("#add-writer-paragraph"),
   workspaceWriter: document.querySelector("#workspace-writer"),
@@ -68,6 +69,7 @@ const elements = {
   dashboardPlan: document.querySelector("#dashboard-plan"),
   modeHint: document.querySelector("#mode-hint"),
   pages: document.querySelector("#pages"),
+  writerObjects: document.querySelector("#writer-objects"),
   writerEditor: document.querySelector("#writer-editor"),
   promptInput: document.querySelector("#prompt-input"),
   saveMemory: document.querySelector("#save-memory"),
@@ -138,6 +140,7 @@ const state = {
   ready: false,
   mode: "writer",
   noteText: "",
+  writerObjects: [],
   sheetColumns: [...SHEET_COLUMNS],
   sheetRows: [],
   slides: [],
@@ -1765,8 +1768,29 @@ function insertWriterTemplate(kind) {
     persistWorkspace();
     return;
   }
+  if (kind === "bullets") {
+    state.writerObjects.push({
+      id: `obj-${Date.now()}`,
+      kind: "bullets",
+      title: "새 목록",
+      items: ["항목 1", "항목 2", "항목 3"],
+    });
+    renderWriterObjects();
+    persistWorkspace();
+    return;
+  }
   if (kind === "table") {
-    appendWriterText("항목 | 내용 | 비고\n1 | 내용 입력 | -\n2 | 내용 입력 | -");
+    state.writerObjects.push({
+      id: `obj-${Date.now()}`,
+      kind: "table",
+      title: "새 표",
+      headers: ["항목", "내용", "비고"],
+      rows: [
+        ["1", "내용 입력", "-"],
+        ["2", "내용 입력", "-"],
+      ],
+    });
+    renderWriterObjects();
     persistWorkspace();
   }
 }
@@ -2749,6 +2773,7 @@ function createWorkspaceSnapshot() {
     mode: state.mode,
     fileName: state.fileName,
     writer: getWriterSnapshot(),
+    writerObjects: state.writerObjects,
     promptInput: elements.promptInput?.value || "",
     liveRoute: state.liveRoute,
     noteText: elements.notesPad.value,
@@ -2807,6 +2832,9 @@ async function applyWorkspaceSnapshot(saved) {
   if (Array.isArray(saved.writer?.paragraphs) && saved.writer.paragraphs.length > 0) {
     replaceWriterWithText(saved.writer.paragraphs.join("\n\n"));
   }
+  if (Array.isArray(saved.writerObjects)) {
+    state.writerObjects = saved.writerObjects;
+  }
   if (saved.sheet?.rows && Array.isArray(saved.sheet.rows)) {
     if (Array.isArray(saved.sheet.columns) && saved.sheet.columns.length > 0) {
       state.sheetColumns = saved.sheet.columns.map((column) => String(column));
@@ -2847,6 +2875,7 @@ async function applyWorkspaceSnapshot(saved) {
     await importWorkspaceMemories(saved.memory, true);
     await refreshMemoryRecall(String(elements.promptInput?.value || "").trim());
   }
+  renderWriterObjects();
 }
 
 function persistWorkspace() {
@@ -3069,6 +3098,149 @@ function renderWriterEditor(document) {
   });
 }
 
+function renderWriterObjects() {
+  if (!elements.writerObjects) {
+    return;
+  }
+  if (!Array.isArray(state.writerObjects) || state.writerObjects.length === 0) {
+    elements.writerObjects.innerHTML = "<div class='writer-object-card'><strong>표와 목록 없음</strong><span>상단의 목록/표 버튼으로 추가할 수 있습니다.</span></div>";
+    return;
+  }
+  elements.writerObjects.innerHTML = state.writerObjects
+    .map((item, index) => {
+      if (item.kind === "table") {
+        return `
+          <div class="writer-object-card">
+            <div class="writer-paragraph-head">
+              <strong>${escapeHtml(item.title || `표 ${index + 1}`)}</strong>
+              <div class="writer-paragraph-actions">
+                <button class="secondary writer-table-row-add" data-object-index="${index}">행 추가</button>
+                <button class="secondary writer-table-col-add" data-object-index="${index}">열 추가</button>
+                <button class="secondary writer-object-delete" data-object-index="${index}">삭제</button>
+              </div>
+            </div>
+            <div class="writer-table-wrap">
+              <table class="sheet-table writer-table">
+                <thead>
+                  <tr>
+                    ${(item.headers || []).map((header, headerIndex) => `<th contenteditable="true" data-header-index="${headerIndex}" data-object-index="${index}">${escapeHtml(String(header || ""))}</th>`).join("")}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(item.rows || []).map((row, rowIndex) => `
+                    <tr>
+                      ${row.map((cell, cellIndex) => `<td contenteditable="true" data-row-index="${rowIndex}" data-cell-index="${cellIndex}" data-object-index="${index}">${escapeHtml(String(cell || ""))}</td>`).join("")}
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div class="writer-object-card">
+          <div class="writer-paragraph-head">
+            <strong>${escapeHtml(item.title || `목록 ${index + 1}`)}</strong>
+            <div class="writer-paragraph-actions">
+              <button class="secondary writer-bullet-add" data-object-index="${index}">항목 추가</button>
+              <button class="secondary writer-object-delete" data-object-index="${index}">삭제</button>
+            </div>
+          </div>
+          <div class="writer-bullets">
+            ${(item.items || []).map((bullet, bulletIndex) => `
+              <textarea class="writer-bullet-input" data-object-index="${index}" data-bullet-index="${bulletIndex}">${escapeHtml(String(bullet || ""))}</textarea>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  elements.writerObjects.querySelectorAll(".writer-object-delete").forEach((button) => {
+    button.addEventListener("click", () => {
+      const objectIndex = Number(button.dataset.objectIndex || "-1");
+      state.writerObjects = state.writerObjects.filter((_, index) => index !== objectIndex);
+      renderWriterObjects();
+      persistWorkspace();
+    });
+  });
+  elements.writerObjects.querySelectorAll(".writer-table-row-add").forEach((button) => {
+    button.addEventListener("click", () => {
+      const objectIndex = Number(button.dataset.objectIndex || "-1");
+      const target = state.writerObjects[objectIndex];
+      if (!target || target.kind !== "table") {
+        return;
+      }
+      target.rows.push(target.headers.map(() => ""));
+      renderWriterObjects();
+      persistWorkspace();
+    });
+  });
+  elements.writerObjects.querySelectorAll(".writer-table-col-add").forEach((button) => {
+    button.addEventListener("click", () => {
+      const objectIndex = Number(button.dataset.objectIndex || "-1");
+      const target = state.writerObjects[objectIndex];
+      if (!target || target.kind !== "table") {
+        return;
+      }
+      target.headers.push(`열 ${target.headers.length + 1}`);
+      target.rows = target.rows.map((row) => [...row, ""]);
+      renderWriterObjects();
+      persistWorkspace();
+    });
+  });
+  elements.writerObjects.querySelectorAll("th[contenteditable='true']").forEach((cell) => {
+    cell.addEventListener("input", () => {
+      const objectIndex = Number(cell.dataset.objectIndex || "-1");
+      const headerIndex = Number(cell.dataset.headerIndex || "-1");
+      const target = state.writerObjects[objectIndex];
+      if (!target || target.kind !== "table") {
+        return;
+      }
+      target.headers[headerIndex] = cell.textContent || "";
+      persistWorkspace();
+    });
+  });
+  elements.writerObjects.querySelectorAll("td[contenteditable='true']").forEach((cell) => {
+    cell.addEventListener("input", () => {
+      const objectIndex = Number(cell.dataset.objectIndex || "-1");
+      const rowIndex = Number(cell.dataset.rowIndex || "-1");
+      const cellIndex = Number(cell.dataset.cellIndex || "-1");
+      const target = state.writerObjects[objectIndex];
+      if (!target || target.kind !== "table") {
+        return;
+      }
+      target.rows[rowIndex][cellIndex] = cell.textContent || "";
+      persistWorkspace();
+    });
+  });
+  elements.writerObjects.querySelectorAll(".writer-bullet-add").forEach((button) => {
+    button.addEventListener("click", () => {
+      const objectIndex = Number(button.dataset.objectIndex || "-1");
+      const target = state.writerObjects[objectIndex];
+      if (!target || target.kind !== "bullets") {
+        return;
+      }
+      target.items.push("새 항목");
+      renderWriterObjects();
+      persistWorkspace();
+    });
+  });
+  elements.writerObjects.querySelectorAll(".writer-bullet-input").forEach((input) => {
+    input.addEventListener("input", () => {
+      const objectIndex = Number(input.dataset.objectIndex || "-1");
+      const bulletIndex = Number(input.dataset.bulletIndex || "-1");
+      const target = state.writerObjects[objectIndex];
+      if (!target || target.kind !== "bullets") {
+        return;
+      }
+      target.items[bulletIndex] = input.value || "";
+      persistWorkspace();
+    });
+  });
+}
+
 function getParagraphLength(section, paragraph) {
   return state.doc.getParagraphLength(section, paragraph);
 }
@@ -3210,6 +3382,7 @@ async function refreshDocumentView() {
   const summary = getDocumentSummary();
   updateMeta(summary);
   renderPages();
+  renderWriterObjects();
   renderWriterEditor(summary);
 }
 
@@ -3420,6 +3593,13 @@ elements.insertParagraph?.addEventListener("click", async () => {
   await refreshDocumentView();
   setMode("writer");
   setStatus("문단 블록을 추가했습니다.");
+});
+
+elements.insertBullets?.addEventListener("click", async () => {
+  insertWriterTemplate("bullets");
+  await refreshDocumentView();
+  setMode("writer");
+  setStatus("목록 블록을 추가했습니다.");
 });
 
 elements.insertTable?.addEventListener("click", async () => {

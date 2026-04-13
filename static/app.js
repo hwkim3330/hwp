@@ -1946,6 +1946,25 @@ function parseXml(xmlTextValue) {
   return new DOMParser().parseFromString(xmlTextValue, "application/xml");
 }
 
+function xmlName(node) {
+  return String(node?.localName || node?.nodeName || "").replace(/^.*:/, "");
+}
+
+function firstChildByName(node, name) {
+  return [...(node?.children || [])].find((child) => xmlName(child) === name) || null;
+}
+
+function childrenByName(node, name) {
+  return [...(node?.children || [])].filter((child) => xmlName(child) === name);
+}
+
+function docxNodeText(node) {
+  return [...node.querySelectorAll("w\\:t, t")]
+    .map((item) => item.textContent || "")
+    .join("")
+    .trim();
+}
+
 async function unzipOfficeFile(file) {
   const bytes = await file.arrayBuffer();
   return JSZip.loadAsync(bytes);
@@ -1958,25 +1977,82 @@ async function parseDocxFile(file) {
     throw new Error("DOCX 문서 본문을 찾지 못했습니다.");
   }
   const xml = parseXml(documentXml);
-  const paragraphs = [...xml.querySelectorAll("w\\:body > w\\:p, body > p")]
-    .map((paragraph) =>
-      [...paragraph.querySelectorAll("w\\:t, t")]
-        .map((node) => node.textContent || "")
-        .join("")
-        .trim(),
-    )
-    .filter(Boolean);
+  const body = firstChildByName(xml.documentElement, "body");
+  if (!body) {
+    throw new Error("DOCX 본문을 찾지 못했습니다.");
+  }
 
-  if (paragraphs.length === 0) {
+  const paragraphs = [];
+  const paragraphStyles = [];
+  const writerObjects = [];
+
+  [...body.children].forEach((node, index) => {
+    const name = xmlName(node);
+    if (name === "p") {
+      const text = docxNodeText(node);
+      if (!text) {
+        return;
+      }
+      const pPr = firstChildByName(node, "pPr");
+      const pStyle = firstChildByName(pPr, "pStyle");
+      const styleValue = String(pStyle?.getAttribute("w:val") || pStyle?.getAttribute("val") || "").toLowerCase();
+      let style = "body";
+      if (styleValue === "heading1") {
+        style = "heading1";
+      } else if (styleValue === "heading2") {
+        style = "heading2";
+      } else if (styleValue === "heading3") {
+        style = "heading3";
+      }
+
+      const numPr = firstChildByName(pPr, "numPr");
+      if (numPr) {
+        const prefix = /^\d+\.\s+/.test(text) ? "numbered" : "bullets";
+        writerObjects.push({
+          id: `docx-list-${Date.now()}-${index}`,
+          kind: prefix,
+          title: prefix === "numbered" ? `번호 목록 ${writerObjects.length + 1}` : `목록 ${writerObjects.length + 1}`,
+          items: [text.replace(/^[-•]\s+/, "").replace(/^\d+\.\s+/, "")],
+        });
+        return;
+      }
+
+      paragraphs.push(text);
+      paragraphStyles.push(style);
+      return;
+    }
+
+    if (name === "tbl") {
+      const rows = childrenByName(node, "tr").map((row) =>
+        childrenByName(row, "tc").map((cell) => docxNodeText(cell)),
+      ).filter((row) => row.length > 0);
+      if (!rows.length) {
+        return;
+      }
+      const [headers, ...dataRows] = rows;
+      writerObjects.push({
+        id: `docx-table-${Date.now()}-${index}`,
+        kind: "table",
+        title: `표 ${writerObjects.length + 1}`,
+        headers,
+        rows: dataRows,
+      });
+    }
+  });
+
+  if (paragraphs.length === 0 && writerObjects.length === 0) {
     throw new Error("DOCX에서 읽을 문단이 없습니다.");
   }
 
   createBlankDocument();
   replaceWriterWithText(paragraphs.join("\n\n"));
+  state.writerParagraphStyles = paragraphStyles;
+  state.writerObjects = writerObjects;
   state.fileName = file.name.replace(/\.docx$/i, ".hwp");
   setMode("writer");
   persistWorkspace();
-  setStatus("DOCX 문서를 Writer로 가져왔습니다.", `${paragraphs.length}개 문단을 불러왔습니다.`);
+  await refreshDocumentView();
+  setStatus("DOCX 문서를 Writer로 가져왔습니다.", `문단 ${paragraphs.length}개 · 오브젝트 ${writerObjects.length}개`);
 }
 
 async function parseXlsxFile(file) {

@@ -8,6 +8,7 @@ const elements = {
   topTabNotes: document.querySelector("#top-tab-notes"),
   topTabSheet: document.querySelector("#top-tab-sheet"),
   topTabSlides: document.querySelector("#top-tab-slides"),
+  appVersionButton: document.querySelector("#app-version-button"),
   topbarRoute: document.querySelector("#topbar-route"),
   topbarStatus: document.querySelector("#topbar-status"),
   settingsToggle: document.querySelector("#settings-toggle"),
@@ -116,6 +117,12 @@ const elements = {
   settingsSkipOnboarding: document.querySelector("#settings-skip-onboarding"),
   setupReadiness: document.querySelector("#setup-readiness"),
   setupReadinessMeta: document.querySelector("#setup-readiness-meta"),
+  appReleaseSummary: document.querySelector("#app-release-summary"),
+  appReleaseMeta: document.querySelector("#app-release-meta"),
+  appReleaseLink: document.querySelector("#app-release-link"),
+  appRepoLink: document.querySelector("#app-repo-link"),
+  releaseChecklist: document.querySelector("#release-checklist"),
+  releaseChecklistMeta: document.querySelector("#release-checklist-meta"),
   templateCards: [...document.querySelectorAll(".template-card")],
   promptChips: [...document.querySelectorAll(".prompt-chip")],
 };
@@ -155,6 +162,7 @@ let writerEditorSyncTimer = 0;
 let memoryRecallTimer = 0;
 window.__lastRuntime = {};
 window.__lastHealth = null;
+window.__appInfo = null;
 
 function installMeasureTextWidth() {
   let ctx = null;
@@ -275,6 +283,103 @@ function renderSetupReadiness(runtime = {}, health = null) {
     .join("");
   if (elements.setupReadinessMeta) {
     elements.setupReadinessMeta.textContent = `LLM ${health?.model || runtime?.llm?.model || "-"} · Memory ${runtime?.memory?.items ?? 0} · Browser ${runtime?.computerUse?.sessions ?? 0}`;
+  }
+}
+
+function renderAppInfo(app) {
+  if (!app) {
+    return;
+  }
+  window.__appInfo = app;
+  const currentVersion = app.version || "0.0.0";
+  const latest = app.latestRelease || {};
+  const latestLabel = latest.tag || latest.name || "확인 실패";
+  const status = app.updateAvailable ? "update" : "current";
+  const statusText = app.updateAvailable ? "업데이트 가능" : "최신 상태";
+
+  if (elements.appVersionButton) {
+    elements.appVersionButton.textContent = `v${currentVersion}`;
+    elements.appVersionButton.classList.toggle("is-update", Boolean(app.updateAvailable));
+    elements.appVersionButton.title = app.updateAvailable
+      ? `새 릴리스 ${latestLabel}`
+      : `현재 버전 ${currentVersion}`;
+  }
+  if (elements.appReleaseSummary) {
+    const rows = [
+      { label: "현재 버전", state: "ready", detail: currentVersion },
+      { label: "최신 릴리스", state: latest.available ? status : "partial", detail: latestLabel },
+      { label: "업데이트", state: app.updateAvailable ? "partial" : "ready", detail: statusText },
+    ];
+    elements.appReleaseSummary.innerHTML = rows
+      .map(
+        (item) => `
+          <div class="setup-readiness-row">
+            <strong>${escapeHtml(item.label)}</strong>
+            <span class="setup-readiness-state is-${escapeHtml(item.state)}">${escapeHtml(item.state)}</span>
+            <code>${escapeHtml(item.detail)}</code>
+          </div>
+        `,
+      )
+      .join("");
+  }
+  if (elements.appReleaseMeta) {
+    elements.appReleaseMeta.textContent = latest.published_at
+      ? `최신 릴리스 ${latestLabel} · ${new Date(latest.published_at).toLocaleString("ko-KR")}`
+      : `현재 버전 ${currentVersion} · 릴리스 확인 ${latest.available ? "완료" : "대기"}`;
+  }
+  if (elements.appReleaseLink) {
+    elements.appReleaseLink.href = latest.url || app.releasesUrl || "https://github.com/hwkim3330/hwp/releases";
+  }
+  if (elements.appRepoLink) {
+    elements.appRepoLink.href = app.repo || "https://github.com/hwkim3330/hwp";
+  }
+  if (elements.releaseChecklist) {
+    const packaging = app.packaging || {};
+    const rows = [
+      { label: "앱 아이콘", state: packaging.icon ? "ready" : "offline", detail: packaging.icon ? "적용 완료" : "아이콘 없음" },
+      { label: "패키징", state: "ready", detail: (packaging.target || []).join(" / ") || "dmg / zip" },
+      { label: "서명", state: packaging.signed ? "ready" : "partial", detail: packaging.signed ? "서명 완료" : "ad-hoc 또는 미서명" },
+      { label: "노타리제이션", state: packaging.notarized ? "ready" : "partial", detail: packaging.notarized ? "노타리제이션 완료" : "Apple Developer 단계 남음" },
+      { label: "업데이트 채널", state: latest.available ? "ready" : "partial", detail: app.releasesUrl || "GitHub Releases" },
+    ];
+    elements.releaseChecklist.innerHTML = rows
+      .map(
+        (item) => `
+          <div class="setup-readiness-row">
+            <strong>${escapeHtml(item.label)}</strong>
+            <span class="setup-readiness-state is-${escapeHtml(item.state)}">${escapeHtml(item.state)}</span>
+            <code>${escapeHtml(item.detail)}</code>
+          </div>
+        `,
+      )
+      .join("");
+  }
+  if (elements.releaseChecklistMeta) {
+    elements.releaseChecklistMeta.textContent = app.updateAvailable
+      ? `새 릴리스 ${latestLabel} 확인됨. 공개 배포 전 서명과 노타리제이션이 필요합니다.`
+      : `릴리스 채널은 준비됐고, 공개 배포 병목은 서명과 노타리제이션입니다.`;
+  }
+}
+
+async function refreshAppInfo() {
+  try {
+    const response = await fetch("/api/app-info", { cache: "no-store" });
+    const data = await response.json();
+    if (!data.ok) {
+      throw new Error("app info unavailable");
+    }
+    renderAppInfo(data.app || {});
+  } catch (error) {
+    if (elements.appVersionButton) {
+      elements.appVersionButton.textContent = "v?";
+      elements.appVersionButton.title = String(error.message || error);
+    }
+    if (elements.appReleaseSummary) {
+      elements.appReleaseSummary.textContent = "앱 상태를 불러오지 못했습니다.";
+    }
+    if (elements.appReleaseMeta) {
+      elements.appReleaseMeta.textContent = String(error.message || error);
+    }
   }
 }
 
@@ -3105,6 +3210,7 @@ async function boot() {
   await refreshDocumentView();
   await refreshAgentHealth();
   await refreshRuntimeRegistry();
+  await refreshAppInfo();
   await refreshSessionLog();
   await refreshMemoryRecall("");
   await refreshOnlyOfficeSessions();
@@ -3378,6 +3484,10 @@ elements.projectGoal?.addEventListener("input", () => {
 });
 elements.focusToggle?.addEventListener("click", () => setFocusMode());
 elements.settingsToggle?.addEventListener("click", () => {
+  syncPreferencesUi();
+  openAppModal();
+});
+elements.appVersionButton?.addEventListener("click", () => {
   syncPreferencesUi();
   openAppModal();
 });

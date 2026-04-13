@@ -352,6 +352,17 @@ input {
   line-height: 1.45;
 }
 
+.topbar-version {
+  min-width: 64px;
+  justify-content: center;
+}
+
+.topbar-version.is-update {
+  background: rgba(255, 159, 10, 0.14);
+  border-color: rgba(255, 159, 10, 0.18);
+  color: #b86a00;
+}
+
 .setup-readiness {
   display: grid;
   gap: 10px;
@@ -396,6 +407,21 @@ input {
 .setup-readiness-state.is-offline {
   background: rgba(185, 28, 28, 0.12);
   color: #b91c1c;
+}
+
+.setup-readiness-state.is-update {
+  background: rgba(255, 159, 10, 0.14);
+  color: #b86a00;
+}
+
+.modal-link-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.modal-link {
+  text-decoration: none;
 }
 
 .live-activity {

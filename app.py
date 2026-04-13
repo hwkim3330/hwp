@@ -45,6 +45,8 @@ BROWSER_USE_SESSIONS = {}
 MEMPALACE_REFERENCE_DIR = Path(os.environ.get("MEMPALACE_REFERENCE_DIR", str(Path.home() / "office-agent-sources" / "mempalace"))).expanduser()
 MEMORY_ITEMS = []
 MAX_MEMORY_ITEMS = 400
+APP_INFO_CACHE = {"ts": 0.0, "data": None}
+APP_INFO_TTL_SECONDS = 900
 
 
 SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
@@ -1793,6 +1795,86 @@ def runtime_registry():
     }
 
 
+def app_version():
+    try:
+        package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+        return str(package.get("version", "0.0.0"))
+    except Exception:
+        return "0.0.0"
+
+
+def latest_release_info():
+    now = time.time()
+    cached = APP_INFO_CACHE.get("data")
+    if cached and now - APP_INFO_CACHE.get("ts", 0.0) < APP_INFO_TTL_SECONDS:
+        return cached
+
+    release = {
+        "checked_at": int(now),
+        "available": False,
+        "tag": None,
+        "name": None,
+        "url": "https://github.com/hwkim3330/hwp/releases",
+        "published_at": None,
+        "notes_url": "https://github.com/hwkim3330/hwp/releases",
+        "status": "offline",
+        "detail": "latest release unavailable",
+    }
+    req = request.Request(
+        "https://api.github.com/repos/hwkim3330/hwp/releases/latest",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": USER_AGENT,
+        },
+        method="GET",
+    )
+    try:
+        with request.urlopen(req, timeout=4) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        release.update(
+            {
+                "available": True,
+                "tag": payload.get("tag_name"),
+                "name": payload.get("name"),
+                "url": payload.get("html_url") or release["url"],
+                "notes_url": payload.get("html_url") or release["url"],
+                "published_at": payload.get("published_at"),
+                "status": "ready",
+                "detail": "latest release resolved",
+            }
+        )
+    except Exception as exc:
+        release["detail"] = str(exc)
+
+    APP_INFO_CACHE["ts"] = now
+    APP_INFO_CACHE["data"] = release
+    return release
+
+
+def app_info():
+    current_version = app_version()
+    release = latest_release_info()
+    latest_tag = str(release.get("tag") or "")
+    normalized_latest = latest_tag[1:] if latest_tag.startswith("v") else latest_tag
+    update_available = bool(normalized_latest and normalized_latest != current_version)
+    return {
+        "name": "hwp",
+        "version": current_version,
+        "bundleId": "com.hwkim.hwp",
+        "repo": "https://github.com/hwkim3330/hwp",
+        "releasesUrl": "https://github.com/hwkim3330/hwp/releases",
+        "latestRelease": release,
+        "updateAvailable": update_available,
+        "packaging": {
+            "target": ["dmg", "zip"],
+            "icon": (ROOT / "build-assets" / "hwp.icns").is_file(),
+            "artifactPattern": "dist-electron/hwp-<version>-arm64.{dmg,zip}",
+            "signed": False,
+            "notarized": False,
+        },
+    }
+
+
 def run_system_action(action, payload):
     if not ENABLE_SYSTEM_ACTIONS:
         raise PermissionError("system actions disabled")
@@ -1832,6 +1914,7 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(
                 {
                     "ok": True,
+                    "version": app_version(),
                     "model": LLM_MODEL,
                     "baseUrl": LLM_BASE_URL,
                     "planner": "llm+fallback",
@@ -1844,6 +1927,9 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/runtime":
             self._send_json({"ok": True, "runtime": runtime_registry()})
+            return
+        if self.path == "/api/app-info":
+            self._send_json({"ok": True, "app": app_info()})
             return
         if self.path.startswith("/api/memory/search"):
             query = parse_qs(urlparse(self.path).query).get("q", [""])[0]

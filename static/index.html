@@ -25,6 +25,7 @@
       </div>
       <div class="app-topbar-section app-topbar-right">
         <div class="topbar-tools">
+          <button id="app-version-button" class="topbar-action topbar-version">v-</button>
           <button id="settings-toggle" class="topbar-action">설정</button>
           <button id="focus-toggle" class="topbar-action">집중 모드</button>
           <button id="new-document" class="topbar-action">새 문서</button>
@@ -464,6 +465,20 @@
             <h3>준비 상태</h3>
             <div id="setup-readiness" class="setup-readiness">상태 확인 중...</div>
             <div id="setup-readiness-meta" class="planner-meta">모델, HWPX 엔진, 브라우저 자동화, 기억 계층 준비 여부를 확인합니다.</div>
+          </article>
+          <article class="modal-panel">
+            <h3>앱 상태</h3>
+            <div id="app-release-summary" class="setup-readiness">상태 확인 중...</div>
+            <div class="modal-link-row">
+              <a id="app-release-link" class="topbar-action modal-link" href="https://github.com/hwkim3330/hwp/releases" target="_blank" rel="noreferrer noopener">릴리스</a>
+              <a id="app-repo-link" class="topbar-action modal-link" href="https://github.com/hwkim3330/hwp" target="_blank" rel="noreferrer noopener">저장소</a>
+            </div>
+            <div id="app-release-meta" class="planner-meta">현재 버전, 최신 릴리스, 패키징 준비 상태를 표시합니다.</div>
+          </article>
+          <article class="modal-panel">
+            <h3>출시 체크리스트</h3>
+            <div id="release-checklist" class="setup-readiness">체크리스트 준비 중...</div>
+            <div id="release-checklist-meta" class="planner-meta">아이콘, 패키징, 서명, 노타리제이션, 업데이트 채널 상태를 요약합니다.</div>
           </article>
         </div>
       </section>

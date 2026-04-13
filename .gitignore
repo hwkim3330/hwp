@@ -4,3 +4,4 @@ __pycache__/
 node_modules/
 dist-electron/
 .runtime/
+build-assets/icon.iconset/

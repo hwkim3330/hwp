@@ -6,8 +6,9 @@
   "scripts": {
     "desktop": "electron .",
     "desktop:dev": "electron .",
-    "package:mac": "electron-builder --mac dmg zip",
-    "release:github": "VERSION=$(node -p \"require('./package.json').version\") && gh release create \"v$VERSION\" dist-electron/*.dmg dist-electron/*.zip --repo hwkim3330/hwp --generate-notes",
+    "clean:dist": "rm -rf dist-electron",
+    "package:mac": "npm run clean:dist && electron-builder --mac dmg zip",
+    "release:github": "VERSION=$(node -p \"require('./package.json').version\") && gh release create \"v$VERSION\" dist-electron/hwp-*.dmg dist-electron/hwp-*.zip --repo hwkim3330/hwp --generate-notes",
     "test": "node --check electron/main.js && node --check electron/preload.js && python3 -m py_compile app.py"
   },
   "repository": {
@@ -39,6 +40,7 @@
     "appId": "com.hwkim.hwp",
     "productName": "hwp",
     "artifactName": "hwp-${version}-${arch}.${ext}",
+    "icon": "build-assets/hwp.icns",
     "directories": {
       "output": "dist-electron"
     },
@@ -46,11 +48,13 @@
       "electron/**/*",
       "static/**/*",
       "app.py",
+      "build-assets/hwp.icns",
       "README.md",
       "package.json"
     ],
     "mac": {
       "category": "public.app-category.productivity",
+      "icon": "build-assets/hwp.icns",
       "target": [
         "dmg",
         "zip"

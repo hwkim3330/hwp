@@ -61,6 +61,8 @@ npm run package:mac
 
 빌드 결과물은 `dist-electron/`에 생성됩니다.
 현재 앱 식별자는 `com.hwkim.hwp`입니다.
+패키지에는 전용 `hwp` macOS 아이콘이 포함됩니다.
+패키징 전에 기존 `dist-electron/` 산출물은 자동으로 정리합니다.
 
 ## GitHub Releases 배포
 

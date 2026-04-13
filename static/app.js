@@ -20,6 +20,7 @@ const elements = {
   insertHeading: document.querySelector("#insert-heading"),
   insertParagraph: document.querySelector("#insert-paragraph"),
   insertBullets: document.querySelector("#insert-bullets"),
+  insertNumbered: document.querySelector("#insert-numbered"),
   insertTable: document.querySelector("#insert-table"),
   addWriterParagraph: document.querySelector("#add-writer-paragraph"),
   workspaceWriter: document.querySelector("#workspace-writer"),
@@ -1564,6 +1565,41 @@ function blocksToText(blocks) {
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function extractWriterObjectsFromBlocks(blocks) {
+  if (!Array.isArray(blocks)) {
+    return [];
+  }
+  return blocks.flatMap((block, index) => {
+    if (!block || typeof block !== "object") {
+      return [];
+    }
+    if (block.kind === "table") {
+      return [
+        {
+          id: `block-table-${Date.now()}-${index}`,
+          kind: "table",
+          title: `표 ${index + 1}`,
+          headers: Array.isArray(block.headers) ? block.headers.map((item) => String(item || "")) : [],
+          rows: Array.isArray(block.rows)
+            ? block.rows.map((row) => (Array.isArray(row) ? row.map((cell) => String(cell || "")) : []))
+            : [],
+        },
+      ];
+    }
+    if (block.kind === "bullets" || block.kind === "numbered") {
+      return [
+        {
+          id: `block-list-${Date.now()}-${index}`,
+          kind: block.kind === "numbered" ? "numbered" : "bullets",
+          title: block.kind === "numbered" ? `번호 목록 ${index + 1}` : `목록 ${index + 1}`,
+          items: Array.isArray(block.items) ? block.items.map((item) => String(item || "")) : [],
+        },
+      ];
+    }
+    return [];
+  });
+}
+
 function htmlToStructuredText(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(`<div>${String(html || "")}</div>`, "text/html");
@@ -1773,6 +1809,17 @@ function insertWriterTemplate(kind) {
       id: `obj-${Date.now()}`,
       kind: "bullets",
       title: "새 목록",
+      items: ["항목 1", "항목 2", "항목 3"],
+    });
+    renderWriterObjects();
+    persistWorkspace();
+    return;
+  }
+  if (kind === "numbered") {
+    state.writerObjects.push({
+      id: `obj-${Date.now()}`,
+      kind: "numbered",
+      title: "새 번호 목록",
       items: ["항목 1", "항목 2", "항목 3"],
     });
     renderWriterObjects();
@@ -3138,6 +3185,7 @@ function renderWriterObjects() {
           </div>
         `;
       }
+      const prefix = item.kind === "numbered" ? "번호" : "불릿";
       return `
         <div class="writer-object-card">
           <div class="writer-paragraph-head">
@@ -3149,7 +3197,10 @@ function renderWriterObjects() {
           </div>
           <div class="writer-bullets">
             ${(item.items || []).map((bullet, bulletIndex) => `
-              <textarea class="writer-bullet-input" data-object-index="${index}" data-bullet-index="${bulletIndex}">${escapeHtml(String(bullet || ""))}</textarea>
+              <div class="writer-bullet-row">
+                <span class="writer-bullet-prefix">${escapeHtml(item.kind === "numbered" ? `${bulletIndex + 1}.` : "•")}</span>
+                <textarea class="writer-bullet-input" data-object-index="${index}" data-bullet-index="${bulletIndex}">${escapeHtml(String(bullet || ""))}</textarea>
+              </div>
             `).join("")}
           </div>
         </div>
@@ -3268,6 +3319,7 @@ function applyOperation(operation) {
   }
 
   if (operation.type === "set_document_blocks") {
+    state.writerObjects = extractWriterObjectsFromBlocks(operation.blocks);
     applyWriterBlocks(0, 0, operation.blocks, "replace_all");
     persistWorkspace();
     return;
@@ -3280,6 +3332,7 @@ function applyOperation(operation) {
   }
 
   if (operation.type === "append_blocks") {
+    state.writerObjects = [...state.writerObjects, ...extractWriterObjectsFromBlocks(operation.blocks)];
     const summary = getDocumentSummary();
     const last = summary.paragraphs.at(-1) ?? { section: 0, paragraph: 0 };
     applyWriterBlocks(last.section, last.paragraph, operation.blocks, "append");
@@ -3600,6 +3653,13 @@ elements.insertBullets?.addEventListener("click", async () => {
   await refreshDocumentView();
   setMode("writer");
   setStatus("목록 블록을 추가했습니다.");
+});
+
+elements.insertNumbered?.addEventListener("click", async () => {
+  insertWriterTemplate("numbered");
+  await refreshDocumentView();
+  setMode("writer");
+  setStatus("번호 목록 블록을 추가했습니다.");
 });
 
 elements.insertTable?.addEventListener("click", async () => {

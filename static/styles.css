@@ -1122,6 +1122,23 @@ button.secondary {
   gap: 8px;
 }
 
+.writer-bullet-row {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.writer-bullet-prefix {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .writer-bullet-input {
   min-height: 72px;
   margin: 0;

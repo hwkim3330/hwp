@@ -70,6 +70,7 @@ const elements = {
   dashboardPlan: document.querySelector("#dashboard-plan"),
   modeHint: document.querySelector("#mode-hint"),
   pages: document.querySelector("#pages"),
+  writerFlow: document.querySelector("#writer-flow"),
   writerObjects: document.querySelector("#writer-objects"),
   writerEditor: document.querySelector("#writer-editor"),
   promptInput: document.querySelector("#prompt-input"),
@@ -143,6 +144,7 @@ const state = {
   noteText: "",
   writerObjects: [],
   writerParagraphStyles: [],
+  activeWriterFocus: null,
   sheetColumns: [...SHEET_COLUMNS],
   sheetRows: [],
   slides: [],
@@ -1784,6 +1786,10 @@ function moveWriterObject(fromIndex, toIndex) {
   state.writerObjects = moveParallelList(state.writerObjects, fromIndex, toIndex);
 }
 
+function writerObjectAnchorLabel(anchor) {
+  return anchor < 0 ? "문서 시작" : `문단 ${anchor + 1} 뒤`;
+}
+
 function currentWriterAnchor() {
   const count = getDocumentSummary().paragraphs.length;
   return Math.max(-1, count - 1);
@@ -1860,6 +1866,63 @@ function buildWriterFlowParagraphs() {
     });
   });
   return merged.filter((item) => item.text);
+}
+
+function getWriterFlowItems() {
+  const summary = getDocumentSummary();
+  normalizeWriterParagraphStyles(summary.paragraphs.length);
+  normalizeWriterObjects();
+  const paragraphItems = summary.paragraphs.map((item, index) => ({
+    flowKind: "paragraph",
+    paragraphIndex: index,
+    style: state.writerParagraphStyles[index] || "body",
+    title: `문단 ${index + 1}`,
+    preview: String(item.text || "").trim(),
+    anchorLabel: `문단 ${index + 1}`,
+  }));
+  const objectMap = new Map();
+  (state.writerObjects || []).forEach((item, objectIndex) => {
+    const key = Number.isInteger(item.anchor) ? item.anchor : Math.max(-1, paragraphItems.length - 1);
+    if (!objectMap.has(key)) {
+      objectMap.set(key, []);
+    }
+    objectMap.get(key).push({
+      flowKind: "object",
+      objectIndex,
+      kind: item.kind,
+      title: item.title || (item.kind === "table" ? `표 ${objectIndex + 1}` : `목록 ${objectIndex + 1}`),
+      preview: objectToParagraphs(item).slice(0, 3).join("\n"),
+      anchorLabel: writerObjectAnchorLabel(key),
+    });
+  });
+  const merged = [];
+  (objectMap.get(-1) || []).forEach((item) => merged.push(item));
+  paragraphItems.forEach((item, index) => {
+    merged.push(item);
+    (objectMap.get(index) || []).forEach((objectItem) => merged.push(objectItem));
+  });
+  return merged;
+}
+
+function focusWriterParagraph(index) {
+  state.activeWriterFocus = { kind: "paragraph", index };
+  renderWriterFlow();
+  renderWriterEditor(getDocumentSummary());
+  requestAnimationFrame(() => {
+    const target = elements.writerEditor?.querySelector(`.writer-paragraph-input[data-index="${index}"]`);
+    target?.focus();
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+}
+
+function focusWriterObject(index) {
+  state.activeWriterFocus = { kind: "object", index };
+  renderWriterFlow();
+  renderWriterObjects();
+  requestAnimationFrame(() => {
+    const target = elements.writerObjects?.querySelector(`[data-object-index="${index}"]`);
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
 }
 
 function exportTempHwpBytes() {
@@ -3479,6 +3542,56 @@ function renderWriterEditor(document) {
   });
 }
 
+function renderWriterFlow() {
+  if (!elements.writerFlow) {
+    return;
+  }
+  const items = getWriterFlowItems();
+  if (items.length === 0) {
+    elements.writerFlow.innerHTML = "<div class='writer-flow-card'><strong>문서 흐름 없음</strong><span>문단이나 표를 추가하면 여기서 실제 순서를 바로 볼 수 있습니다.</span></div>";
+    return;
+  }
+  elements.writerFlow.innerHTML = items.map((item) => {
+    const isActive = item.flowKind === state.activeWriterFocus?.kind
+      && (item.flowKind === "paragraph" ? item.paragraphIndex === state.activeWriterFocus.index : item.objectIndex === state.activeWriterFocus.index);
+    const kindLabel = item.flowKind === "paragraph"
+      ? (item.style === "body" ? "문단" : item.style.replace("heading", "제목 "))
+      : item.kind === "table"
+        ? "표"
+        : item.kind === "numbered"
+          ? "번호 목록"
+          : "불릿 목록";
+    return `
+      <div class="writer-flow-card ${isActive ? "is-active" : ""}">
+        <div class="writer-flow-head">
+          <div class="writer-flow-meta">
+            <span class="writer-flow-kind">${escapeHtml(kindLabel)}</span>
+            <strong>${escapeHtml(item.title)}</strong>
+            <span class="writer-flow-anchor">${escapeHtml(item.anchorLabel)}</span>
+          </div>
+          <div class="writer-paragraph-actions">
+            <button class="secondary writer-flow-focus" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">편집</button>
+          </div>
+        </div>
+        <p class="writer-flow-preview">${escapeHtml(item.preview || "내용 없음")}</p>
+      </div>
+    `;
+  }).join("");
+  elements.writerFlow.querySelectorAll(".writer-flow-focus").forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetKind = String(button.dataset.flowKind || "");
+      const index = Number(button.dataset.index || "-1");
+      if (targetKind === "paragraph") {
+        focusWriterParagraph(index);
+        return;
+      }
+      if (targetKind === "object") {
+        focusWriterObject(index);
+      }
+    });
+  });
+}
+
 function renderWriterObjects() {
   if (!elements.writerObjects) {
     return;
@@ -3567,6 +3680,7 @@ function renderWriterObjects() {
         return;
       }
       target.anchor = Number(select.value || "-1");
+      renderWriterFlow();
       persistWorkspace();
     });
   });
@@ -3575,7 +3689,11 @@ function renderWriterObjects() {
     button.addEventListener("click", () => {
       const objectIndex = Number(button.dataset.objectIndex || "-1");
       state.writerObjects = state.writerObjects.filter((_, index) => index !== objectIndex);
+      if (state.activeWriterFocus?.kind === "object" && state.activeWriterFocus.index === objectIndex) {
+        state.activeWriterFocus = null;
+      }
       renderWriterObjects();
+      renderWriterFlow();
       persistWorkspace();
     });
   });
@@ -3584,6 +3702,7 @@ function renderWriterObjects() {
       const objectIndex = Number(button.dataset.objectIndex || "-1");
       moveWriterObject(objectIndex, objectIndex - 1);
       renderWriterObjects();
+      renderWriterFlow();
       persistWorkspace();
     });
   });
@@ -3592,6 +3711,7 @@ function renderWriterObjects() {
       const objectIndex = Number(button.dataset.objectIndex || "-1");
       moveWriterObject(objectIndex, objectIndex + 1);
       renderWriterObjects();
+      renderWriterFlow();
       persistWorkspace();
     });
   });
@@ -3604,6 +3724,7 @@ function renderWriterObjects() {
       }
       target.rows.push(target.headers.map(() => ""));
       renderWriterObjects();
+      renderWriterFlow();
       persistWorkspace();
     });
   });
@@ -3617,6 +3738,7 @@ function renderWriterObjects() {
       target.headers.push(`열 ${target.headers.length + 1}`);
       target.rows = target.rows.map((row) => [...row, ""]);
       renderWriterObjects();
+      renderWriterFlow();
       persistWorkspace();
     });
   });
@@ -3629,6 +3751,7 @@ function renderWriterObjects() {
         return;
       }
       target.headers[headerIndex] = cell.textContent || "";
+      renderWriterFlow();
       persistWorkspace();
     });
   });
@@ -3642,6 +3765,7 @@ function renderWriterObjects() {
         return;
       }
       target.rows[rowIndex][cellIndex] = cell.textContent || "";
+      renderWriterFlow();
       persistWorkspace();
     });
   });
@@ -3649,11 +3773,12 @@ function renderWriterObjects() {
     button.addEventListener("click", () => {
       const objectIndex = Number(button.dataset.objectIndex || "-1");
       const target = state.writerObjects[objectIndex];
-      if (!target || target.kind !== "bullets") {
+      if (!target || (target.kind !== "bullets" && target.kind !== "numbered")) {
         return;
       }
       target.items.push("새 항목");
       renderWriterObjects();
+      renderWriterFlow();
       persistWorkspace();
     });
   });
@@ -3662,10 +3787,11 @@ function renderWriterObjects() {
       const objectIndex = Number(input.dataset.objectIndex || "-1");
       const bulletIndex = Number(input.dataset.bulletIndex || "-1");
       const target = state.writerObjects[objectIndex];
-      if (!target || target.kind !== "bullets") {
+      if (!target || (target.kind !== "bullets" && target.kind !== "numbered")) {
         return;
       }
       target.items[bulletIndex] = input.value || "";
+      renderWriterFlow();
       persistWorkspace();
     });
   });
@@ -3814,6 +3940,7 @@ async function refreshDocumentView() {
   const summary = getDocumentSummary();
   updateMeta(summary);
   renderPages();
+  renderWriterFlow();
   renderWriterObjects();
   renderWriterEditor(summary);
 }

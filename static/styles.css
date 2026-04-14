@@ -1091,12 +1091,71 @@ button.secondary {
   background: rgba(255, 255, 255, 0.78);
 }
 
+.writer-flow-shell,
 .writer-objects-shell {
   margin-top: 18px;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.72);
+}
+
+.writer-flow {
+  display: grid;
+  gap: 10px;
+}
+
+.writer-flow-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(17, 24, 39, 0.07);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.writer-flow-card.is-active {
+  border-color: rgba(36, 99, 235, 0.26);
+  box-shadow: 0 0 0 1px rgba(36, 99, 235, 0.08);
+}
+
+.writer-flow-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.writer-flow-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.writer-flow-kind {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.writer-flow-anchor {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.writer-flow-preview {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 .writer-objects {
@@ -1212,6 +1271,11 @@ button.secondary {
 
 .tool-head h3 {
   margin: 0;
+}
+
+.tool-note {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .chat-card {

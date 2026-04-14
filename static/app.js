@@ -1104,7 +1104,7 @@ async function refreshAgentHealth() {
     if (elements.capComputerUseMeta) {
       elements.capComputerUseMeta.textContent = health.computerUse?.reference?.detail || "browser-use reference unavailable";
     }
-    setEngineMeta(`ONLYOFFICE Docs: ${health.onlyoffice?.docsUrl || "http://127.0.0.1:8080"} | active sessions ${health.onlyoffice?.sessions ?? 0}`);
+    setEngineMeta(`ONLYOFFICE ${health.onlyoffice?.docsUrl || "http://127.0.0.1:8080"} · sessions ${health.onlyoffice?.sessions ?? 0} · Collabora ${health.collabora?.url || "http://127.0.0.1:9980"}`);
     setRuntimeBadge(health.hwpforge?.available ? "Local Ops Ready" : "Partial Local Mode");
     if (elements.dashboardNow) {
       elements.dashboardNow.textContent = `모델 ${health.model || "unknown"} · HWPX ${health.hwpforge?.available ? "ready" : "offline"} · OOXML ${health.onlyoffice?.sessions ?? 0} · Browser ${health.computerUse?.sessions ?? 0} · Memory ${health.memory?.items ?? 0}`;
@@ -1146,6 +1146,14 @@ function renderRegistryRows(target, items, emptyText) {
       `,
     )
     .join("");
+}
+
+function externalEditorUrl() {
+  const health = window.__lastHealth || {};
+  if (elements.editorEngine?.value === "collabora") {
+    return health.collabora?.url || "http://127.0.0.1:9980";
+  }
+  return health.onlyoffice?.docsUrl || "http://127.0.0.1:8080";
 }
 
 function renderSearchResults(results) {
@@ -4758,11 +4766,20 @@ elements.editorEngine?.addEventListener("change", () => {
   setEngineMeta(
     elements.editorEngine.value === "onlyoffice"
       ? "ONLYOFFICE를 선택했습니다. 새 창에서 OOXML 편집 세션을 엽니다."
-      : "Native 편집 엔진을 사용합니다. HWP/HWPX와 로컬 워크스페이스를 직접 다룹니다.",
+      : elements.editorEngine.value === "collabora"
+        ? "Collabora를 선택했습니다. 협업 엔진 주소를 새 창으로 엽니다."
+        : "Native 편집 엔진을 사용합니다. HWP/HWPX와 로컬 워크스페이스를 직접 다룹니다.",
   );
 });
 elements.openOnlyOffice?.addEventListener("click", async () => {
   try {
+    if (elements.editorEngine?.value === "collabora") {
+      const url = externalEditorUrl();
+      window.open(url, "_blank", "noopener,noreferrer");
+      setStatus("Collabora 엔진 주소를 열었습니다.");
+      setEngineMeta(`Collabora 엔진: ${url}`);
+      return;
+    }
     if (elements.editorEngine?.value !== "onlyoffice") {
       elements.editorEngine.value = "onlyoffice";
     }

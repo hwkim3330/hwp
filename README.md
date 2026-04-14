@@ -128,3 +128,15 @@ cd /Users/parksik/hwp
 - 현재는 업무 문서 초안 생성과 단락 단위 수정에 최적화되어 있습니다.
 - OOXML 저장은 현재 앱이 재구성한 내용 기준으로 생성되며, 원본 문서의 고급 레이아웃과 서식까지 그대로 보존하지는 않습니다.
 - GPU 실시간 사용률과 NPU/ANE 사용률은 현재 공개 Node/Electron 경로만으로는 안정적으로 수집하지 못합니다.
+External office engines:
+
+```bash
+# ONLYOFFICE
+./scripts/start_onlyoffice_docker.sh
+
+# Collabora
+./scripts/start_collabora_docker.sh
+```
+
+Current environment note:
+- This machine currently does not have `docker` or `podman`, so these engines are configured in the app but not runnable until a container runtime is installed.

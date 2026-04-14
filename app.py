@@ -43,6 +43,7 @@ ENABLE_SYSTEM_ACTIONS = os.environ.get("ENABLE_SYSTEM_ACTIONS", "1") != "0"
 ENABLE_FILE_AUTOMATION = os.environ.get("ENABLE_FILE_AUTOMATION", "1") != "0"
 ENABLE_BROWSER_AUTOMATION = os.environ.get("ENABLE_BROWSER_AUTOMATION", "1") != "0"
 ONLYOFFICE_DOCS_URL = os.environ.get("ONLYOFFICE_DOCS_URL", "http://127.0.0.1:8080").rstrip("/")
+COLLABORA_URL = os.environ.get("COLLABORA_URL", "http://127.0.0.1:9980").rstrip("/")
 USER_AGENT = "hwp/1.0 (+https://github.com/hwkim3330/hwp)"
 SESSION_ID = f"session-{int(time.time())}"
 SESSION_EVENTS = []
@@ -1834,6 +1835,13 @@ def tool_registry():
             "detail": f"OOXML 편집 세션 브리지 via {ONLYOFFICE_DOCS_URL}",
         },
         {
+            "id": "collabora_bridge",
+            "label": "Collabora Bridge",
+            "category": "documents",
+            "status": "partial",
+            "detail": f"협업 편집 엔진 endpoint via {COLLABORA_URL}",
+        },
+        {
             "id": "computer_use",
             "label": "Computer Use",
             "category": "automation",
@@ -1857,6 +1865,7 @@ def runtime_registry():
         "llm": {"model": LLM_MODEL, "baseUrl": LLM_BASE_URL, "ollama": is_ollama_base_url()},
         "mlxExperimental": mlx_status,
         "onlyoffice": {"docsUrl": ONLYOFFICE_DOCS_URL, "sessions": len(ONLYOFFICE_SESSIONS)},
+        "collabora": {"url": COLLABORA_URL},
         "computerUse": {"sessions": len(BROWSER_USE_SESSIONS), "reference": browser_use_reference_status()},
         "memory": {"items": len(MEMORY_ITEMS), "reference": mempalace_reference_status()},
         "permissions": permission_registry(),
@@ -1990,6 +1999,7 @@ class Handler(SimpleHTTPRequestHandler):
                     "planner": "llm+fallback",
                     "hwpforge": hwpforge_status(),
                     "onlyoffice": {"docsUrl": ONLYOFFICE_DOCS_URL, "sessions": len(ONLYOFFICE_SESSIONS)},
+                    "collabora": {"url": COLLABORA_URL},
                     "computerUse": {"sessions": len(BROWSER_USE_SESSIONS), "reference": browser_use_reference_status()},
                     "memory": {"items": len(MEMORY_ITEMS), "reference": mempalace_reference_status()},
                 }

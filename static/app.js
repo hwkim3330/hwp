@@ -1790,6 +1790,19 @@ function writerObjectAnchorLabel(anchor) {
   return anchor < 0 ? "문서 시작" : `문단 ${anchor + 1} 뒤`;
 }
 
+function shiftWriterObjectAnchors(startIndex, delta) {
+  if (!Array.isArray(state.writerObjects) || !delta) {
+    return;
+  }
+  state.writerObjects = state.writerObjects.map((item) => {
+    const anchor = Number.isInteger(item.anchor) ? item.anchor : -1;
+    if (anchor >= startIndex) {
+      return { ...item, anchor: anchor + delta };
+    }
+    return item;
+  });
+}
+
 function currentWriterAnchor() {
   const count = getDocumentSummary().paragraphs.length;
   return Math.max(-1, count - 1);
@@ -1923,6 +1936,56 @@ function focusWriterObject(index) {
     const target = elements.writerObjects?.querySelector(`[data-object-index="${index}"]`);
     target?.scrollIntoView({ behavior: "smooth", block: "center" });
   });
+}
+
+async function insertWriterParagraphAt(index, text = "새 문단", style = "body") {
+  const values = getWriterEditorValues();
+  const insertIndex = Math.max(0, Math.min(values.length, index));
+  values.splice(insertIndex, 0, text);
+  state.writerParagraphStyles.splice(insertIndex, 0, style);
+  shiftWriterObjectAnchors(insertIndex, 1);
+  rebuildWriterFromParagraphItems(values);
+  await refreshDocumentView();
+  focusWriterParagraph(insertIndex);
+}
+
+function createWriterObject(kind, anchor) {
+  if (kind === "table") {
+    return {
+      id: `writer-object-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      kind: "table",
+      title: "새 표",
+      headers: ["항목", "내용"],
+      rows: [["", ""]],
+      anchor,
+    };
+  }
+  return {
+    id: `writer-object-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    kind,
+    title: kind === "numbered" ? "새 번호 목록" : "새 목록",
+    items: ["새 항목"],
+    anchor,
+  };
+}
+
+function insertWriterObjectAfterFlowItem(flowKind, index, objectKind) {
+  const nextObject = createWriterObject(objectKind, -1);
+  if (flowKind === "paragraph") {
+    nextObject.anchor = index;
+    const insertIndex = (state.writerObjects || []).findIndex((item) => Number(item.anchor) > index);
+    if (insertIndex < 0) {
+      state.writerObjects.push(nextObject);
+      return state.writerObjects.length - 1;
+    }
+    state.writerObjects.splice(insertIndex, 0, nextObject);
+    return insertIndex;
+  }
+  const targetObject = state.writerObjects[index];
+  nextObject.anchor = targetObject ? Number.isInteger(targetObject.anchor) ? targetObject.anchor : -1 : -1;
+  const insertIndex = Math.max(0, index + 1);
+  state.writerObjects.splice(insertIndex, 0, nextObject);
+  return insertIndex;
 }
 
 async function moveWriterFlowItem(flowKind, index, direction) {
@@ -3635,6 +3698,9 @@ function renderWriterFlow() {
           <div class="writer-paragraph-actions">
             <button class="secondary writer-flow-up" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">위로</button>
             <button class="secondary writer-flow-down" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">아래로</button>
+            <button class="secondary writer-flow-add-paragraph" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">문단 추가</button>
+            <button class="secondary writer-flow-add-table" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">표 추가</button>
+            <button class="secondary writer-flow-add-bullets" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">목록 추가</button>
             <button class="secondary writer-flow-focus" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">편집</button>
           </div>
         </div>
@@ -3667,6 +3733,39 @@ function renderWriterFlow() {
       const targetKind = String(button.dataset.flowKind || "");
       const index = Number(button.dataset.index || "-1");
       await moveWriterFlowItem(targetKind, index, 1);
+    });
+  });
+  elements.writerFlow.querySelectorAll(".writer-flow-add-paragraph").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targetKind = String(button.dataset.flowKind || "");
+      const index = Number(button.dataset.index || "-1");
+      const insertIndex = targetKind === "paragraph" ? index + 1 : Math.max(0, Number(state.writerObjects[index]?.anchor ?? -1) + 1);
+      await insertWriterParagraphAt(insertIndex, "새 문단", "body");
+      setStatus("문단을 추가했습니다.");
+    });
+  });
+  elements.writerFlow.querySelectorAll(".writer-flow-add-table").forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetKind = String(button.dataset.flowKind || "");
+      const index = Number(button.dataset.index || "-1");
+      const objectIndex = insertWriterObjectAfterFlowItem(targetKind, index, "table");
+      renderWriterFlow();
+      renderWriterObjects();
+      persistWorkspace();
+      focusWriterObject(objectIndex);
+      setStatus("표를 추가했습니다.");
+    });
+  });
+  elements.writerFlow.querySelectorAll(".writer-flow-add-bullets").forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetKind = String(button.dataset.flowKind || "");
+      const index = Number(button.dataset.index || "-1");
+      const objectIndex = insertWriterObjectAfterFlowItem(targetKind, index, "bullets");
+      renderWriterFlow();
+      renderWriterObjects();
+      persistWorkspace();
+      focusWriterObject(objectIndex);
+      setStatus("목록을 추가했습니다.");
     });
   });
 }

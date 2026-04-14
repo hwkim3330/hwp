@@ -253,6 +253,7 @@ function applyOperatorProfile(profile, options = {}) {
     if (elements.operatorProfileMeta) {
       elements.operatorProfileMeta.textContent = "문서 작성과 편집에 맞춘 기본 모드입니다. 검색은 기본적으로 끕니다.";
     }
+    setWorkflowHint("작성 중심 모드입니다. Writer와 로컬 편집 흐름을 우선합니다.");
   } else if (nextProfile === "research") {
     if (elements.searchEnabled) {
       elements.searchEnabled.checked = true;
@@ -263,6 +264,7 @@ function applyOperatorProfile(profile, options = {}) {
     if (elements.operatorProfileMeta) {
       elements.operatorProfileMeta.textContent = "검색과 긴 문서 정리에 맞춘 모드입니다. 깊은 작성과 검색을 기본으로 둡니다.";
     }
+    setWorkflowHint("조사 중심 모드입니다. 검색, 링크 정리, 연구노트 구조화를 우선합니다.");
   } else {
     if (elements.searchEnabled) {
       elements.searchEnabled.checked = true;
@@ -273,7 +275,9 @@ function applyOperatorProfile(profile, options = {}) {
     if (elements.operatorProfileMeta) {
       elements.operatorProfileMeta.textContent = "브라우저 계획과 빠른 실행에 맞춘 모드입니다. 속도와 검색을 우선합니다.";
     }
+    setWorkflowHint("자동화 중심 모드입니다. 브라우저 계획과 빠른 실행 흐름을 우선합니다.");
   }
+  syncEditorEngineRecommendation();
   elements.operatorProfiles?.forEach((button) => {
     button.classList.toggle("is-active", button.dataset.profile === nextProfile);
   });
@@ -1171,6 +1175,23 @@ function syncEditorEngineRecommendation() {
   const recommended = recommendedEditorEngine();
   if (elements.editorEngine.value === "native" || elements.editorEngine.value === "onlyoffice") {
     elements.editorEngine.value = recommended;
+  }
+  const profile = state.preferences.operatorProfile || "writer";
+  if (profile === "automation") {
+    if (recommended === "native") {
+      setEngineMeta("추천 엔진: Native. 자동화 모드에서도 Writer는 로컬 편집이 안전합니다.");
+    } else {
+      setEngineMeta("추천 엔진: ONLYOFFICE. 자동화 모드에서 Sheet와 Slides는 OOXML 세션이 더 적합합니다.");
+    }
+    return;
+  }
+  if (profile === "research") {
+    if (recommended === "native") {
+      setEngineMeta("추천 엔진: Native. 조사 결과를 Writer에 바로 정리하는 흐름입니다.");
+    } else {
+      setEngineMeta("추천 엔진: ONLYOFFICE. 조사 결과를 표와 슬라이드로 넘길 때 적합합니다.");
+    }
+    return;
   }
   if (recommended === "native") {
     setEngineMeta("추천 엔진: Native. Writer는 로컬 편집과 HWP/HWPX 작업이 우선입니다.");

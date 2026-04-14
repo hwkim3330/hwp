@@ -68,6 +68,7 @@ const elements = {
   dashboardNow: document.querySelector("#dashboard-now"),
   dashboardCapture: document.querySelector("#dashboard-capture"),
   dashboardPlan: document.querySelector("#dashboard-plan"),
+  dashboardRunbook: document.querySelector("#dashboard-runbook"),
   modeHint: document.querySelector("#mode-hint"),
   pages: document.querySelector("#pages"),
   writerFlow: document.querySelector("#writer-flow"),
@@ -175,6 +176,7 @@ let memoryRecallTimer = 0;
 window.__lastRuntime = {};
 window.__lastHealth = null;
 window.__appInfo = null;
+window.__lastSessionEvents = [];
 let lastSnapshotFingerprint = "";
 
 function normalizeWriterParagraphStyles(count) {
@@ -988,6 +990,7 @@ function renderComputerUsePlan(session) {
     executed_steps: session?.executed_steps ?? 0,
     status: session?.status,
   });
+  updateRunbook(window.__lastSessionEvents || []);
 }
 
 function renderComputerUseSessions(items) {
@@ -1163,6 +1166,33 @@ function renderSessionEvents(events) {
     .join("");
 }
 
+function updateRunbook(events = []) {
+  if (!elements.dashboardRunbook) {
+    return;
+  }
+  const recent = Array.isArray(events) ? [...events].reverse() : [];
+  const latest = recent[0] || null;
+  const latestSearch = recent.find((event) => event?.type === "search");
+  const latestPlan = recent.find((event) => event?.type === "computer_use_plan");
+  const activeBrowser = state.currentComputerUsePlan;
+  const browserProgress = activeBrowser ? summarizeComputerUseProgress(activeBrowser) : null;
+  const parts = [];
+  parts.push(`라우트 ${state.liveRoute || "auto"}`);
+  if (latestPlan?.payload?.goal) {
+    parts.push(`브라우저 ${String(latestPlan.payload.goal).slice(0, 36)}`);
+  }
+  if (browserProgress && browserProgress.total > 0) {
+    parts.push(`진행 ${browserProgress.done}/${browserProgress.total}`);
+  }
+  if (latestSearch?.payload?.query) {
+    parts.push(`검색 ${String(latestSearch.payload.query).slice(0, 24)}`);
+  }
+  if (latest?.type) {
+    parts.push(`최근 ${latest.type}`);
+  }
+  elements.dashboardRunbook.textContent = parts.join(" · ") || "실행 기록이 쌓이면 현재 작업 단위를 여기서 요약합니다.";
+}
+
 async function refreshRuntimeRegistry() {
   try {
     const response = await fetch("/api/runtime", { cache: "no-store" });
@@ -1201,11 +1231,14 @@ async function refreshSessionLog() {
     if (elements.sessionMeta) {
       elements.sessionMeta.textContent = `세션: ${data.session?.id || "-"} | 최근 이벤트: ${(data.session?.events || []).length}`;
     }
-    renderSessionEvents(data.session?.events || []);
+    window.__lastSessionEvents = data.session?.events || [];
+    renderSessionEvents(window.__lastSessionEvents);
+    updateRunbook(window.__lastSessionEvents);
   } catch (error) {
     if (elements.sessionLog) {
       elements.sessionLog.textContent = String(error.message || error);
     }
+    updateRunbook([]);
   }
 }
 

@@ -1784,6 +1784,19 @@ function moveWriterObject(fromIndex, toIndex) {
   state.writerObjects = moveParallelList(state.writerObjects, fromIndex, toIndex);
 }
 
+function currentWriterAnchor() {
+  const count = getDocumentSummary().paragraphs.length;
+  return Math.max(-1, count - 1);
+}
+
+function normalizeWriterObjects() {
+  const paragraphCount = getDocumentSummary().paragraphs.length;
+  state.writerObjects = (state.writerObjects || []).map((item) => ({
+    ...item,
+    anchor: Number.isInteger(item.anchor) ? Math.max(-1, Math.min(paragraphCount - 1, item.anchor)) : currentWriterAnchor(),
+  }));
+}
+
 function syncWriterFromEditor(options = {}) {
   const { rerenderEditor = false, status = "" } = options;
   rebuildWriterFromParagraphItems(getWriterEditorValues());
@@ -1844,6 +1857,7 @@ function insertWriterTemplate(kind) {
       kind: "bullets",
       title: "새 목록",
       items: ["항목 1", "항목 2", "항목 3"],
+      anchor: currentWriterAnchor(),
     });
     renderWriterObjects();
     persistWorkspace();
@@ -1855,6 +1869,7 @@ function insertWriterTemplate(kind) {
       kind: "numbered",
       title: "새 번호 목록",
       items: ["항목 1", "항목 2", "항목 3"],
+      anchor: currentWriterAnchor(),
     });
     renderWriterObjects();
     persistWorkspace();
@@ -1870,6 +1885,7 @@ function insertWriterTemplate(kind) {
         ["1", "내용 입력", "-"],
         ["2", "내용 입력", "-"],
       ],
+      anchor: currentWriterAnchor(),
     });
     renderWriterObjects();
     persistWorkspace();
@@ -2001,6 +2017,7 @@ async function parseDocxFile(file) {
         kind: currentList.kind,
         title: currentList.kind === "numbered" ? `번호 목록 ${writerObjects.length + 1}` : `목록 ${writerObjects.length + 1}`,
         items: [...currentList.items],
+        anchor: Math.max(-1, paragraphs.length - 1),
       });
     }
     currentList = null;
@@ -2057,6 +2074,7 @@ async function parseDocxFile(file) {
         title: `표 ${writerObjects.length + 1}`,
         headers,
         rows: dataRows,
+        anchor: Math.max(-1, paragraphs.length - 1),
       });
     }
   });
@@ -2217,8 +2235,7 @@ async function buildDocxBytes() {
     .filter((item) => item.text);
   const zip = new JSZip();
   const created = toIsoDate();
-  const paragraphXml = (paragraphs.length ? paragraphs : [{ text: "", style: "body" }])
-    .map(({ text, style }) => {
+  const renderParagraphXml = ({ text, style }) => {
       const styleXml = style === "heading1"
         ? `<w:pPr><w:pStyle w:val="Heading1"/></w:pPr>`
         : style === "heading2"
@@ -2227,10 +2244,8 @@ async function buildDocxBytes() {
             ? `<w:pPr><w:pStyle w:val="Heading3"/></w:pPr>`
             : "";
       return `<w:p>${styleXml}<w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
-    })
-    .join("");
-  const objectXml = (state.writerObjects || [])
-    .map((item) => {
+  };
+  const renderObjectXml = (item) => {
       if (item.kind === "table") {
         const headers = Array.isArray(item.headers) ? item.headers : [];
         const rows = Array.isArray(item.rows) ? item.rows : [];
@@ -2252,9 +2267,26 @@ async function buildDocxBytes() {
         return `${titleXml}${itemsXml}`;
       }
       return "";
-    })
-    .join("");
-  const bodyXml = `${paragraphXml}${objectXml}`;
+    };
+  normalizeWriterObjects();
+  const objectMap = new Map();
+  (state.writerObjects || []).forEach((item) => {
+    const key = Number.isInteger(item.anchor) ? item.anchor : Math.max(-1, paragraphs.length - 1);
+    if (!objectMap.has(key)) {
+      objectMap.set(key, []);
+    }
+    objectMap.get(key).push(item);
+  });
+  let bodyXml = "";
+  (objectMap.get(-1) || []).forEach((item) => {
+    bodyXml += renderObjectXml(item);
+  });
+  (paragraphs.length ? paragraphs : [{ text: "", style: "body" }]).forEach((paragraph, index) => {
+    bodyXml += renderParagraphXml(paragraph);
+    (objectMap.get(index) || []).forEach((item) => {
+      bodyXml += renderObjectXml(item);
+    });
+  });
   zip.file(
     "[Content_Types].xml",
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -3365,6 +3397,13 @@ function renderWriterObjects() {
   if (!elements.writerObjects) {
     return;
   }
+  normalizeWriterObjects();
+  const paragraphCount = getDocumentSummary().paragraphs.length;
+  const anchorOptions = Array.from({ length: paragraphCount + 1 }, (_, index) => {
+    const anchor = index - 1;
+    const label = anchor < 0 ? "문서 시작" : `문단 ${anchor + 1} 뒤`;
+    return { anchor, label };
+  });
   if (!Array.isArray(state.writerObjects) || state.writerObjects.length === 0) {
     elements.writerObjects.innerHTML = "<div class='writer-object-card'><strong>표와 목록 없음</strong><span>상단의 목록/표 버튼으로 추가할 수 있습니다.</span></div>";
     return;
@@ -3377,6 +3416,9 @@ function renderWriterObjects() {
             <div class="writer-paragraph-head">
               <strong>${escapeHtml(item.title || `표 ${index + 1}`)}</strong>
               <div class="writer-paragraph-actions">
+                <select class="writer-anchor-select" data-object-index="${index}">
+                  ${anchorOptions.map((option) => `<option value="${option.anchor}" ${Number(item.anchor) === option.anchor ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+                </select>
                 <button class="secondary writer-object-up" data-object-index="${index}">위로</button>
                 <button class="secondary writer-object-down" data-object-index="${index}">아래로</button>
                 <button class="secondary writer-table-row-add" data-object-index="${index}">행 추가</button>
@@ -3409,6 +3451,9 @@ function renderWriterObjects() {
           <div class="writer-paragraph-head">
             <strong>${escapeHtml(item.title || `목록 ${index + 1}`)}</strong>
             <div class="writer-paragraph-actions">
+              <select class="writer-anchor-select" data-object-index="${index}">
+                ${anchorOptions.map((option) => `<option value="${option.anchor}" ${Number(item.anchor) === option.anchor ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+              </select>
               <button class="secondary writer-object-up" data-object-index="${index}">위로</button>
               <button class="secondary writer-object-down" data-object-index="${index}">아래로</button>
               <button class="secondary writer-bullet-add" data-object-index="${index}">항목 추가</button>
@@ -3427,6 +3472,18 @@ function renderWriterObjects() {
       `;
     })
     .join("");
+
+  elements.writerObjects.querySelectorAll(".writer-anchor-select").forEach((select) => {
+    select.addEventListener("change", () => {
+      const objectIndex = Number(select.dataset.objectIndex || "-1");
+      const target = state.writerObjects[objectIndex];
+      if (!target) {
+        return;
+      }
+      target.anchor = Number(select.value || "-1");
+      persistWorkspace();
+    });
+  });
 
   elements.writerObjects.querySelectorAll(".writer-object-delete").forEach((button) => {
     button.addEventListener("click", () => {

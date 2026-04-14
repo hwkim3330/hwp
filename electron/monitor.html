@@ -375,11 +375,16 @@
         </article>
 
         <article class="card wide">
-          <div class="label">Cursor Whip</div>
+          <div class="label">Presenter Overlay</div>
           <div id="cursor-pos" class="value">--</div>
-          <div id="cursor-meta" class="meta">커서를 손잡이로 쓰는 물리 채찍 오버레이입니다.</div>
+          <div id="cursor-meta" class="meta">발표용 형광펜, 스포트라이트, 채찍 오버레이를 전환할 수 있습니다.</div>
+          <div class="preset-grid">
+            <button id="overlay-mode-highlighter" class="preset-button" type="button">형광펜</button>
+            <button id="overlay-mode-spotlight" class="preset-button" type="button">스포트라이트</button>
+            <button id="overlay-mode-whip" class="preset-button" type="button">채찍</button>
+          </div>
           <div class="controls">
-            <button id="cursor-toggle" class="control-button" type="button">채찍 켜기</button>
+            <button id="cursor-toggle" class="control-button" type="button">오버레이 켜기</button>
             <div id="cursor-state" class="control-state">현재 꺼짐</div>
           </div>
         </article>
@@ -453,6 +458,9 @@
       const cursorMeta = document.getElementById("cursor-meta");
       const cursorToggle = document.getElementById("cursor-toggle");
       const cursorState = document.getElementById("cursor-state");
+      const overlayModeHighlighter = document.getElementById("overlay-mode-highlighter");
+      const overlayModeSpotlight = document.getElementById("overlay-mode-spotlight");
+      const overlayModeWhip = document.getElementById("overlay-mode-whip");
       const presetMeta = document.getElementById("preset-meta");
       const captureButton = document.getElementById("capture-button");
       const captureMeta = document.getElementById("capture-meta");
@@ -468,6 +476,7 @@
       const openPrivacy = document.getElementById("open-privacy");
       const refreshAppInfo = document.getElementById("refresh-app-info");
       let cursorOverlayEnabled = false;
+      let cursorOverlayMode = "whip";
 
       for (let index = 0; index < 16; index += 1) {
         const bar = document.createElement("div");
@@ -503,10 +512,14 @@
         return ["한가함", "백그라운드 부하가 낮습니다."];
       }
 
-      function updateCursorOverlayUi(enabled) {
+      function updateCursorOverlayUi(enabled, mode = cursorOverlayMode) {
         cursorOverlayEnabled = Boolean(enabled);
-        cursorToggle.textContent = cursorOverlayEnabled ? "채찍 끄기" : "채찍 켜기";
-        cursorState.textContent = cursorOverlayEnabled ? "현재 켜짐" : "현재 꺼짐";
+        cursorOverlayMode = mode || "whip";
+        cursorToggle.textContent = cursorOverlayEnabled ? "오버레이 끄기" : "오버레이 켜기";
+        cursorState.textContent = cursorOverlayEnabled ? `현재 켜짐 · ${cursorOverlayMode}` : `현재 꺼짐 · ${cursorOverlayMode}`;
+        overlayModeHighlighter.classList.toggle("is-active", cursorOverlayMode === "highlighter");
+        overlayModeSpotlight.classList.toggle("is-active", cursorOverlayMode === "spotlight");
+        overlayModeWhip.classList.toggle("is-active", cursorOverlayMode === "whip");
       }
 
       function permissionLabel(status) {
@@ -663,9 +676,13 @@
         disk.textContent = `R ${formatRate(stats.diskReadPerSec)} W ${formatRate(stats.diskWritePerSec)}`;
         cursorPos.textContent = stats.cursor ? `${stats.cursor.x}, ${stats.cursor.y}` : "--";
         cursorMeta.textContent = stats.cursorOverlayEnabled
-          ? "포인터를 손잡이로 삼아 뒤에 따라오는 물리 채찍을 그립니다."
-          : "커서가 잘 안 보이면 채찍 오버레이를 켜면 됩니다.";
-        updateCursorOverlayUi(stats.cursorOverlayEnabled);
+          ? (stats.cursorOverlayMode === "highlighter"
+            ? "커서 주변을 형광펜 링으로 강조합니다."
+            : stats.cursorOverlayMode === "spotlight"
+              ? "주변을 어둡게 하고 커서만 스포트라이트로 비춥니다."
+              : "포인터를 손잡이로 삼아 뒤에 따라오는 물리 채찍을 그립니다.")
+          : "커서가 잘 안 보이면 발표용 오버레이를 켜면 됩니다.";
+        updateCursorOverlayUi(stats.cursorOverlayEnabled, stats.cursorOverlayMode || "whip");
         if (stats.captureStatus?.message) {
           captureMeta.textContent = `${stats.captureStatus.message} · 단축키 Cmd/Ctrl + Shift + 1`;
         }
@@ -680,7 +697,7 @@
       });
 
       window.desktopMonitor.onCursorOverlayState((payload) => {
-        updateCursorOverlayUi(payload?.enabled);
+        updateCursorOverlayUi(payload?.enabled, payload?.mode || "whip");
       });
 
       cursorToggle.addEventListener("click", async () => {
@@ -689,7 +706,20 @@
       });
 
       window.desktopMonitor.getCursorOverlayState().then((result) => {
-        updateCursorOverlayUi(result?.enabled);
+        updateCursorOverlayUi(result?.enabled, result?.mode || "whip");
+      });
+
+      overlayModeHighlighter.addEventListener("click", async () => {
+        const result = await window.desktopMonitor.setCursorOverlayMode("highlighter");
+        updateCursorOverlayUi(result?.enabled, result?.mode || "highlighter");
+      });
+      overlayModeSpotlight.addEventListener("click", async () => {
+        const result = await window.desktopMonitor.setCursorOverlayMode("spotlight");
+        updateCursorOverlayUi(result?.enabled, result?.mode || "spotlight");
+      });
+      overlayModeWhip.addEventListener("click", async () => {
+        const result = await window.desktopMonitor.setCursorOverlayMode("whip");
+        updateCursorOverlayUi(result?.enabled, result?.mode || "whip");
       });
 
       document.querySelectorAll("[data-preset]").forEach((button) => {

@@ -17,6 +17,7 @@ let serverProcess = null;
 let monitorTimer = null;
 let cursorTimer = null;
 let cursorOverlayEnabled = false;
+let cursorOverlayMode = "whip";
 let captureStatus = { ok: true, message: "클립보드 캡처 대기" };
 let hardwareInfo = {
   gpuLabel: "Unknown",
@@ -468,10 +469,11 @@ function updateCursorOverlayFrame() {
     cursorOverlayWindow.webContents.send("cursor-overlay-tick", {
       cursor: { x: cursor.x - bounds.x, y: cursor.y - bounds.y },
       enabled: cursorOverlayEnabled,
+      mode: cursorOverlayMode,
     });
   }
   if (monitorWindow && !monitorWindow.isDestroyed()) {
-    monitorWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, cursor });
+    monitorWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, cursor, mode: cursorOverlayMode });
   }
 }
 
@@ -562,6 +564,7 @@ async function fetchStats() {
     cpuCores: Array.isArray(load.cpus) ? load.cpus.map((item) => Math.round(item.load || 0)) : [],
     cursor: screen.getCursorScreenPoint(),
     cursorOverlayEnabled,
+    cursorOverlayMode,
     captureStatus,
     llm: Array.isArray(ollamaPs.models) && ollamaPs.models.length > 0
       ? {
@@ -662,6 +665,19 @@ function toggleCursorOverlay(forceState) {
   return cursorOverlayEnabled;
 }
 
+function setCursorOverlayMode(mode) {
+  const nextMode = ["whip", "highlighter", "spotlight"].includes(mode) ? mode : "whip";
+  cursorOverlayMode = nextMode;
+  if (!cursorOverlayWindow || cursorOverlayWindow.isDestroyed()) {
+    createCursorOverlayWindow();
+  }
+  cursorOverlayWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, mode: cursorOverlayMode });
+  if (monitorWindow && !monitorWindow.isDestroyed()) {
+    monitorWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, mode: cursorOverlayMode });
+  }
+  return cursorOverlayMode;
+}
+
 function createTray() {
   tray = new Tray(createTrayImage());
   tray.setTitle("SYS --");
@@ -669,7 +685,7 @@ function createTray() {
     { label: "Open hwp", click: () => mainWindow?.show() },
     { label: "Toggle System Monitor", click: () => toggleMonitorWindow() },
     { label: "Clipboard Screenshot", click: () => ipcCaptureScreenshot() },
-    { label: "Toggle Cursor Spotlight", click: () => toggleCursorOverlay() },
+    { label: "Toggle Cursor Overlay", click: () => toggleCursorOverlay() },
     { label: "Open Vision Lab", click: () => openVisionWindow() },
     { type: "separator" },
     { label: "Open in Browser", click: () => shell.openExternal(APP_URL) },
@@ -776,7 +792,11 @@ ipcMain.handle("cursor-overlay:toggle", async (_event, forceState) => {
 });
 
 ipcMain.handle("cursor-overlay:state", async () => {
-  return { ok: true, enabled: cursorOverlayEnabled };
+  return { ok: true, enabled: cursorOverlayEnabled, mode: cursorOverlayMode };
+});
+
+ipcMain.handle("cursor-overlay:mode", async (_event, mode) => {
+  return { ok: true, mode: setCursorOverlayMode(mode), enabled: cursorOverlayEnabled };
 });
 
 ipcMain.handle("operator:run-preset", async (_event, presetId) => {

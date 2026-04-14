@@ -140,3 +140,12 @@ External office engines:
 
 Current environment note:
 - This machine currently does not have `docker` or `podman`, so these engines are configured in the app but not runnable until a container runtime is installed.
+
+CLI:
+
+```bash
+python3 scripts/hwp_cli.py runtime
+python3 scripts/hwp_cli.py search "Gemma 4 official docs"
+python3 scripts/hwp_cli.py plan "회의록 형태로 정리해줘" --mode writer
+python3 scripts/hwp_cli.py browser-plan "Gemma 4 release notes 찾아줘"
+```

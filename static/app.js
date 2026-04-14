@@ -1925,6 +1925,68 @@ function focusWriterObject(index) {
   });
 }
 
+async function moveWriterFlowItem(flowKind, index, direction) {
+  const items = getWriterFlowItems();
+  const currentIndex = items.findIndex((item) => (
+    item.flowKind === flowKind
+    && (flowKind === "paragraph" ? item.paragraphIndex === index : item.objectIndex === index)
+  ));
+  if (currentIndex < 0) {
+    return;
+  }
+  const targetItem = items[currentIndex + direction];
+  if (!targetItem) {
+    return;
+  }
+
+  if (flowKind === "paragraph") {
+    if (targetItem.flowKind === "paragraph") {
+      const values = moveListItem(getWriterEditorValues(), index, targetItem.paragraphIndex);
+      state.writerParagraphStyles = moveParallelList(state.writerParagraphStyles, index, targetItem.paragraphIndex);
+      rebuildWriterFromParagraphItems(values);
+      await refreshDocumentView();
+      focusWriterParagraph(targetItem.paragraphIndex);
+      setStatus(direction < 0 ? "문단을 위로 이동했습니다." : "문단을 아래로 이동했습니다.");
+      return;
+    }
+    const targetObject = state.writerObjects[targetItem.objectIndex];
+    if (!targetObject) {
+      return;
+    }
+    targetObject.anchor = direction < 0 ? index : index - 1;
+    normalizeWriterObjects();
+    renderWriterFlow();
+    renderWriterObjects();
+    persistWorkspace();
+    focusWriterParagraph(index);
+    setStatus(direction < 0 ? "오브젝트를 아래로 보내 문단을 올렸습니다." : "오브젝트를 위로 올려 문단을 내렸습니다.");
+    return;
+  }
+
+  if (targetItem.flowKind === "object") {
+    moveWriterObject(index, targetItem.objectIndex);
+    renderWriterFlow();
+    renderWriterObjects();
+    persistWorkspace();
+    focusWriterObject(targetItem.objectIndex);
+    setStatus(direction < 0 ? "오브젝트를 위로 이동했습니다." : "오브젝트를 아래로 이동했습니다.");
+    return;
+  }
+
+  const targetParagraphIndex = targetItem.paragraphIndex;
+  const targetObject = state.writerObjects[index];
+  if (!targetObject) {
+    return;
+  }
+  targetObject.anchor = direction < 0 ? targetParagraphIndex - 1 : targetParagraphIndex;
+  normalizeWriterObjects();
+  renderWriterFlow();
+  renderWriterObjects();
+  persistWorkspace();
+  focusWriterObject(index);
+  setStatus(direction < 0 ? "오브젝트를 위 문단 앞으로 이동했습니다." : "오브젝트를 아래 문단 뒤로 이동했습니다.");
+}
+
 function exportTempHwpBytes() {
   const merged = buildWriterFlowParagraphs();
   const tempDoc = HwpDocument.createEmpty();
@@ -1952,6 +2014,7 @@ function syncWriterFromEditor(options = {}) {
   const summary = getDocumentSummary();
   updateMeta(summary);
   renderPages();
+  renderWriterFlow();
   if (rerenderEditor) {
     renderWriterEditor(summary);
   }
@@ -3570,6 +3633,8 @@ function renderWriterFlow() {
             <span class="writer-flow-anchor">${escapeHtml(item.anchorLabel)}</span>
           </div>
           <div class="writer-paragraph-actions">
+            <button class="secondary writer-flow-up" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">위로</button>
+            <button class="secondary writer-flow-down" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">아래로</button>
             <button class="secondary writer-flow-focus" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">편집</button>
           </div>
         </div>
@@ -3588,6 +3653,20 @@ function renderWriterFlow() {
       if (targetKind === "object") {
         focusWriterObject(index);
       }
+    });
+  });
+  elements.writerFlow.querySelectorAll(".writer-flow-up").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targetKind = String(button.dataset.flowKind || "");
+      const index = Number(button.dataset.index || "-1");
+      await moveWriterFlowItem(targetKind, index, -1);
+    });
+  });
+  elements.writerFlow.querySelectorAll(".writer-flow-down").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targetKind = String(button.dataset.flowKind || "");
+      const index = Number(button.dataset.index || "-1");
+      await moveWriterFlowItem(targetKind, index, 1);
     });
   });
 }

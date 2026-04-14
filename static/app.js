@@ -97,6 +97,8 @@ const elements = {
   actionSlides: document.querySelector("#action-slides"),
   searchEnabled: document.querySelector("#search-enabled"),
   modelProfile: document.querySelector("#model-profile"),
+  operatorProfiles: [...document.querySelectorAll(".operator-profile")],
+  operatorProfileMeta: document.querySelector("#operator-profile-meta"),
   workflowHint: document.querySelector("#workflow-hint"),
   editorEngine: document.querySelector("#editor-engine"),
   openOnlyOffice: document.querySelector("#open-onlyoffice"),
@@ -164,6 +166,7 @@ const state = {
     onboardingDismissed: false,
     defaultSearchEnabled: false,
     defaultModelProfile: "balanced",
+    operatorProfile: "writer",
   },
 };
 
@@ -234,6 +237,49 @@ function updateProjectUi() {
   document.body.classList.toggle("focus-mode", Boolean(state.project?.focusMode));
   if (elements.dashboardPlan && goal && !elements.dashboardPlan.textContent.trim()) {
     elements.dashboardPlan.textContent = goal;
+  }
+}
+
+function applyOperatorProfile(profile, options = {}) {
+  const nextProfile = ["writer", "research", "automation"].includes(profile) ? profile : "writer";
+  state.preferences.operatorProfile = nextProfile;
+  if (nextProfile === "writer") {
+    if (elements.searchEnabled) {
+      elements.searchEnabled.checked = false;
+    }
+    if (elements.modelProfile) {
+      elements.modelProfile.value = "balanced";
+    }
+    if (elements.operatorProfileMeta) {
+      elements.operatorProfileMeta.textContent = "문서 작성과 편집에 맞춘 기본 모드입니다. 검색은 기본적으로 끕니다.";
+    }
+  } else if (nextProfile === "research") {
+    if (elements.searchEnabled) {
+      elements.searchEnabled.checked = true;
+    }
+    if (elements.modelProfile) {
+      elements.modelProfile.value = "deep";
+    }
+    if (elements.operatorProfileMeta) {
+      elements.operatorProfileMeta.textContent = "검색과 긴 문서 정리에 맞춘 모드입니다. 깊은 작성과 검색을 기본으로 둡니다.";
+    }
+  } else {
+    if (elements.searchEnabled) {
+      elements.searchEnabled.checked = true;
+    }
+    if (elements.modelProfile) {
+      elements.modelProfile.value = "fast";
+    }
+    if (elements.operatorProfileMeta) {
+      elements.operatorProfileMeta.textContent = "브라우저 계획과 빠른 실행에 맞춘 모드입니다. 속도와 검색을 우선합니다.";
+    }
+  }
+  elements.operatorProfiles?.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.profile === nextProfile);
+  });
+  if (!options.silent) {
+    persistWorkspace();
+    setStatus("운용 프로필을 적용했습니다.", nextProfile);
   }
 }
 
@@ -3494,8 +3540,10 @@ async function applyWorkspaceSnapshot(saved) {
       onboardingDismissed: Boolean(saved.preferences.onboardingDismissed),
       defaultSearchEnabled: Boolean(saved.preferences.defaultSearchEnabled),
       defaultModelProfile: String(saved.preferences.defaultModelProfile || "balanced"),
+      operatorProfile: String(saved.preferences.operatorProfile || "writer"),
     };
   }
+  applyOperatorProfile(state.preferences.operatorProfile || "writer", { silent: true });
   if (Array.isArray(saved.memory)) {
     await importWorkspaceMemories(saved.memory, true);
     await refreshMemoryRecall(String(elements.promptInput?.value || "").trim());
@@ -4617,6 +4665,11 @@ elements.promptInput?.addEventListener("keydown", (event) => {
   }
 });
 elements.promptInput?.addEventListener("input", previewAgentRoute);
+elements.operatorProfiles?.forEach((button) => {
+  button.addEventListener("click", () => {
+    applyOperatorProfile(String(button.dataset.profile || "writer"));
+  });
+});
 elements.projectName?.addEventListener("input", () => {
   state.project.name = String(elements.projectName.value || "").trim() || "Untitled Project";
   updateProjectUi();

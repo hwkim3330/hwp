@@ -518,6 +518,12 @@ input {
   color: white;
 }
 
+.prompt-chip.is-active {
+  background: rgba(10, 132, 255, 0.12);
+  border-color: rgba(10, 132, 255, 0.18);
+  color: var(--accent);
+}
+
 .workspace-panel {
   display: none;
 }

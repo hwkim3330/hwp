@@ -150,6 +150,42 @@ def apply_plan_to_workspace(snapshot, plan):
     return snapshot
 
 
+def synthesize_writer_plan(prompt, reply=""):
+    title = "업무 문서 초안"
+    prompt_text = str(prompt or "").strip()
+    reply_text = str(reply or "").strip()
+    return {
+        "operations": [
+            {
+                "type": "set_document_blocks",
+                "blocks": [
+                    {"kind": "heading", "level": 1, "text": title},
+                    {"kind": "paragraph", "text": f"요청 사항\n{prompt_text or '작업 내용을 정리합니다.'}"},
+                    {"kind": "heading", "level": 2, "text": "핵심 내용"},
+                    {
+                        "kind": "bullets",
+                        "items": [
+                            reply_text or "요청 목적과 현재 상태를 먼저 요약합니다.",
+                            "핵심 내용은 항목별로 분리해 정리합니다.",
+                            "후속 조치와 일정은 표로 명확히 남깁니다.",
+                        ],
+                    },
+                    {"kind": "heading", "level": 2, "text": "실행 계획"},
+                    {
+                        "kind": "table",
+                        "headers": ["항목", "내용", "상태"],
+                        "rows": [
+                            ["1", "초안 정리", "진행"],
+                            ["2", "검토 및 보강", "대기"],
+                            ["3", "최종 확정", "예정"],
+                        ],
+                    },
+                ],
+            }
+        ]
+    }
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description="hwp CLI")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="hwp server base URL")
@@ -240,7 +276,13 @@ def main():
             if not data.get("ok"):
                 print_output(data, pretty=not args.compact)
                 return 1
-            updated = apply_plan_to_workspace(snapshot, data.get("plan", {}))
+            plan = data.get("plan", {})
+            if args.mode == "writer":
+                operations = plan.get("operations", [])
+                has_writer_blocks = any(item.get("type") in {"set_document_blocks", "append_blocks", "replace_paragraph_blocks"} for item in operations)
+                if not has_writer_blocks:
+                    plan = synthesize_writer_plan(args.prompt, plan.get("reply", ""))
+            updated = apply_plan_to_workspace(snapshot, plan)
             output_path = args.output or args.workspace
             with open(output_path, "w", encoding="utf-8") as handle:
                 json.dump(updated, handle, ensure_ascii=False, indent=2)
@@ -249,7 +291,7 @@ def main():
                     "ok": True,
                     "output": output_path,
                     "reply": data.get("plan", {}).get("reply", ""),
-                    "operations": len(data.get("plan", {}).get("operations", [])),
+                    "operations": len(plan.get("operations", [])),
                 },
                 pretty=not args.compact,
             )

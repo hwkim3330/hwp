@@ -148,4 +148,5 @@ python3 scripts/hwp_cli.py runtime
 python3 scripts/hwp_cli.py search "Gemma 4 official docs"
 python3 scripts/hwp_cli.py plan "회의록 형태로 정리해줘" --mode writer
 python3 scripts/hwp_cli.py browser-plan "Gemma 4 release notes 찾아줘"
+python3 scripts/hwp_cli.py workspace-agent .runtime/sample.json "보고서 형식으로 정리해줘" --mode writer
 ```

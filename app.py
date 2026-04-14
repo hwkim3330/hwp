@@ -591,21 +591,22 @@ def call_computer_use_llm(goal, current_url="", search_results=None):
         {"role": "system", "content": COMPUTER_USE_SYSTEM_PROMPT},
         {"role": "user", "content": user_content},
     ]
-    if is_ollama_base_url():
-        return validate_computer_use_plan(call_ollama_json(messages))
+    llm_config = resolve_llm_config("balanced")
+    if is_ollama_config(llm_config):
+        return validate_computer_use_plan(call_ollama_json(messages, llm_config))
 
     payload = {
-        "model": LLM_MODEL,
+        "model": llm_config["model"],
         "messages": messages,
         "temperature": 0.1,
         "max_tokens": min(LLM_MAX_TOKENS, 500),
         "response_format": {"type": "json_object"},
     }
     headers = {"Content-Type": "application/json"}
-    if LLM_API_KEY:
-        headers["Authorization"] = f"Bearer {LLM_API_KEY}"
+    if llm_config["api_key"]:
+        headers["Authorization"] = f"Bearer {llm_config['api_key']}"
     req = request.Request(
-        f"{LLM_BASE_URL}/chat/completions",
+        f"{llm_config['base_url']}/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
         headers=headers,
         method="POST",

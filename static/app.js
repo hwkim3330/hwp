@@ -1803,6 +1803,50 @@ function shiftWriterObjectAnchors(startIndex, delta) {
   });
 }
 
+function removeWriterParagraphAt(index) {
+  const values = getWriterEditorValues().filter((_, itemIndex) => itemIndex !== index);
+  state.writerParagraphStyles = state.writerParagraphStyles.filter((_, itemIndex) => itemIndex !== index);
+  state.writerObjects = (state.writerObjects || []).map((item) => {
+    const anchor = Number.isInteger(item.anchor) ? item.anchor : -1;
+    if (anchor > index) {
+      return { ...item, anchor: anchor - 1 };
+    }
+    if (anchor === index) {
+      return { ...item, anchor: Math.max(-1, index - 1) };
+    }
+    return item;
+  });
+  rebuildWriterFromParagraphItems(values);
+}
+
+async function duplicateWriterParagraphAt(index) {
+  const values = getWriterEditorValues();
+  if (index < 0 || index >= values.length) {
+    return;
+  }
+  values.splice(index + 1, 0, values[index]);
+  state.writerParagraphStyles.splice(index + 1, 0, state.writerParagraphStyles[index] || "body");
+  shiftWriterObjectAnchors(index + 1, 1);
+  rebuildWriterFromParagraphItems(values);
+  await refreshDocumentView();
+  focusWriterParagraph(index + 1);
+}
+
+function duplicateWriterObjectAt(index) {
+  const target = state.writerObjects[index];
+  if (!target) {
+    return null;
+  }
+  const copy = JSON.parse(JSON.stringify(target));
+  copy.id = `writer-object-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  state.writerObjects.splice(index + 1, 0, copy);
+  return index + 1;
+}
+
+function deleteWriterObjectAt(index) {
+  state.writerObjects = state.writerObjects.filter((_, itemIndex) => itemIndex !== index);
+}
+
 function currentWriterAnchor() {
   const count = getDocumentSummary().paragraphs.length;
   return Math.max(-1, count - 1);
@@ -3624,10 +3668,7 @@ function renderWriterEditor(document) {
   elements.writerEditor.querySelectorAll(".writer-delete-paragraph").forEach((button) => {
     button.addEventListener("click", async () => {
       const targetIndex = Number(button.dataset.index || "-1");
-      const values = getWriterEditorValues()
-        .filter((_, index) => index !== targetIndex);
-      state.writerParagraphStyles = state.writerParagraphStyles.filter((_, index) => index !== targetIndex);
-      rebuildWriterFromParagraphItems(values);
+      removeWriterParagraphAt(targetIndex);
       await refreshDocumentView();
       setStatus("문단을 삭제했습니다.");
     });
@@ -3635,14 +3676,7 @@ function renderWriterEditor(document) {
   elements.writerEditor.querySelectorAll(".writer-duplicate-paragraph").forEach((button) => {
     button.addEventListener("click", async () => {
       const targetIndex = Number(button.dataset.index || "-1");
-      const values = getWriterEditorValues();
-      if (targetIndex < 0 || targetIndex >= values.length) {
-        return;
-      }
-      values.splice(targetIndex + 1, 0, values[targetIndex]);
-      state.writerParagraphStyles.splice(targetIndex + 1, 0, state.writerParagraphStyles[targetIndex] || "body");
-      rebuildWriterFromParagraphItems(values);
-      await refreshDocumentView();
+      await duplicateWriterParagraphAt(targetIndex);
       setStatus("문단을 복제했습니다.");
     });
   });
@@ -3698,6 +3732,8 @@ function renderWriterFlow() {
           <div class="writer-paragraph-actions">
             <button class="secondary writer-flow-up" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">위로</button>
             <button class="secondary writer-flow-down" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">아래로</button>
+            <button class="secondary writer-flow-duplicate" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">복제</button>
+            <button class="secondary writer-flow-delete" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">삭제</button>
             <button class="secondary writer-flow-add-paragraph" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">문단 추가</button>
             <button class="secondary writer-flow-add-table" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">표 추가</button>
             <button class="secondary writer-flow-add-bullets" data-flow-kind="${item.flowKind}" data-index="${item.flowKind === "paragraph" ? item.paragraphIndex : item.objectIndex}">목록 추가</button>
@@ -3733,6 +3769,45 @@ function renderWriterFlow() {
       const targetKind = String(button.dataset.flowKind || "");
       const index = Number(button.dataset.index || "-1");
       await moveWriterFlowItem(targetKind, index, 1);
+    });
+  });
+  elements.writerFlow.querySelectorAll(".writer-flow-duplicate").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targetKind = String(button.dataset.flowKind || "");
+      const index = Number(button.dataset.index || "-1");
+      if (targetKind === "paragraph") {
+        await duplicateWriterParagraphAt(index);
+        setStatus("문단을 복제했습니다.");
+        return;
+      }
+      const objectIndex = duplicateWriterObjectAt(index);
+      renderWriterFlow();
+      renderWriterObjects();
+      persistWorkspace();
+      if (objectIndex !== null) {
+        focusWriterObject(objectIndex);
+      }
+      setStatus("오브젝트를 복제했습니다.");
+    });
+  });
+  elements.writerFlow.querySelectorAll(".writer-flow-delete").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targetKind = String(button.dataset.flowKind || "");
+      const index = Number(button.dataset.index || "-1");
+      if (targetKind === "paragraph") {
+        removeWriterParagraphAt(index);
+        await refreshDocumentView();
+        setStatus("문단을 삭제했습니다.");
+        return;
+      }
+      deleteWriterObjectAt(index);
+      if (state.activeWriterFocus?.kind === "object" && state.activeWriterFocus.index === index) {
+        state.activeWriterFocus = null;
+      }
+      renderWriterFlow();
+      renderWriterObjects();
+      persistWorkspace();
+      setStatus("오브젝트를 삭제했습니다.");
     });
   });
   elements.writerFlow.querySelectorAll(".writer-flow-add-paragraph").forEach((button) => {

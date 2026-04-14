@@ -68,6 +68,7 @@
       let overlayMode = "whip";
       let handleAngle = P.baseTargetAngle;
       let handleAngVel = 0;
+      let pulsePhase = 0;
 
       function resize() {
         width = canvas.width = window.innerWidth;
@@ -323,41 +324,73 @@
         ctx.stroke();
       }
 
+      function drawReticle(radius, color, lineWidth = 2) {
+        ctx.beginPath();
+        ctx.arc(cursor.x, cursor.y, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(cursor.x - radius - 10, cursor.y);
+        ctx.lineTo(cursor.x - radius + 6, cursor.y);
+        ctx.moveTo(cursor.x + radius - 6, cursor.y);
+        ctx.lineTo(cursor.x + radius + 10, cursor.y);
+        ctx.moveTo(cursor.x, cursor.y - radius - 10);
+        ctx.lineTo(cursor.x, cursor.y - radius + 6);
+        ctx.moveTo(cursor.x, cursor.y + radius - 6);
+        ctx.lineTo(cursor.x, cursor.y + radius + 10);
+        ctx.stroke();
+      }
+
       function drawHighlighter() {
         ctx.clearRect(0, 0, width, height);
+        const pulse = 1 + Math.sin(pulsePhase) * 0.04;
+        ctx.save();
+        ctx.translate(cursor.x, cursor.y);
+        ctx.rotate(-0.24);
         ctx.beginPath();
-        ctx.arc(cursor.x, cursor.y, 34, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255, 236, 84, 0.24)";
+        ctx.ellipse(0, 0, 54 * pulse, 30 * pulse, 0, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255, 230, 76, 0.18)";
         ctx.fill();
         ctx.beginPath();
-        ctx.arc(cursor.x, cursor.y, 28, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(255, 214, 10, 0.92)";
-        ctx.lineWidth = 10;
-        ctx.stroke();
+        ctx.ellipse(0, 0, 44 * pulse, 24 * pulse, 0, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255, 214, 10, 0.28)";
+        ctx.fill();
         ctx.beginPath();
-        ctx.arc(cursor.x, cursor.y, 12, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255, 248, 209, 0.96)";
+        ctx.ellipse(0, 0, 46 * pulse, 25 * pulse, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255, 199, 0, 0.95)";
+        ctx.lineWidth = 6;
+        ctx.stroke();
+        ctx.restore();
+        drawReticle(18, "rgba(255, 248, 209, 0.92)", 2.5);
+        ctx.beginPath();
+        ctx.arc(cursor.x, cursor.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255, 252, 235, 0.96)";
         ctx.fill();
       }
 
       function drawSpotlight() {
         ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = "rgba(15, 23, 42, 0.26)";
+        const pulse = 1 + Math.sin(pulsePhase * 0.8) * 0.03;
+        ctx.fillStyle = "rgba(10, 16, 28, 0.30)";
         ctx.fillRect(0, 0, width, height);
-        const gradient = ctx.createRadialGradient(cursor.x, cursor.y, 18, cursor.x, cursor.y, 120);
+        const gradient = ctx.createRadialGradient(cursor.x, cursor.y, 20, cursor.x, cursor.y, 148 * pulse);
         gradient.addColorStop(0, "rgba(255,255,255,0.0)");
-        gradient.addColorStop(0.45, "rgba(255,255,255,0.0)");
-        gradient.addColorStop(1, "rgba(255,255,255,0.88)");
+        gradient.addColorStop(0.36, "rgba(255,255,255,0.0)");
+        gradient.addColorStop(0.72, "rgba(255,255,255,0.65)");
+        gradient.addColorStop(1, "rgba(255,255,255,0.96)");
         ctx.globalCompositeOperation = "destination-out";
         ctx.beginPath();
         ctx.fillStyle = gradient;
-        ctx.arc(cursor.x, cursor.y, 120, 0, Math.PI * 2);
+        ctx.arc(cursor.x, cursor.y, 148 * pulse, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalCompositeOperation = "source-over";
+        drawReticle(22, "rgba(255, 245, 157, 0.98)", 3);
         ctx.beginPath();
-        ctx.arc(cursor.x, cursor.y, 22, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(255, 245, 157, 0.98)";
-        ctx.lineWidth = 4;
+        ctx.arc(cursor.x, cursor.y, 74 * pulse, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255, 244, 168, 0.18)";
+        ctx.lineWidth = 18;
         ctx.stroke();
       }
 
@@ -410,6 +443,7 @@
       }
 
       function animate() {
+        pulsePhase += 0.08;
         if (overlayMode === "highlighter") {
           drawHighlighter();
         } else if (overlayMode === "spotlight") {

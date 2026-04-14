@@ -1797,6 +1797,92 @@ function normalizeWriterObjects() {
   }));
 }
 
+function objectToParagraphs(item) {
+  if (!item || typeof item !== "object") {
+    return [];
+  }
+  if (item.kind === "table") {
+    const lines = [];
+    if (item.title) {
+      lines.push(String(item.title).trim());
+    }
+    const headers = Array.isArray(item.headers) ? item.headers.map((cell) => String(cell || "").trim()) : [];
+    if (headers.length) {
+      lines.push(headers.join(" | "));
+    }
+    (item.rows || []).forEach((row) => {
+      if (Array.isArray(row)) {
+        lines.push(row.map((cell) => String(cell || "").trim()).join(" | "));
+      }
+    });
+    return lines.filter(Boolean);
+  }
+  if (item.kind === "bullets" || item.kind === "numbered") {
+    const lines = [];
+    if (item.title) {
+      lines.push(String(item.title).trim());
+    }
+    (item.items || []).forEach((entry, index) => {
+      const prefix = item.kind === "numbered" ? `${index + 1}. ` : "• ";
+      lines.push(`${prefix}${String(entry || "").trim()}`);
+    });
+    return lines.filter(Boolean);
+  }
+  return [];
+}
+
+function buildWriterFlowParagraphs() {
+  const summary = getDocumentSummary();
+  normalizeWriterParagraphStyles(summary.paragraphs.length);
+  normalizeWriterObjects();
+  const paragraphItems = summary.paragraphs.map((item, index) => ({
+    kind: "paragraph",
+    style: state.writerParagraphStyles[index] || "body",
+    text: String(item.text || "").trim(),
+  }));
+  const objectMap = new Map();
+  (state.writerObjects || []).forEach((item) => {
+    const key = Number.isInteger(item.anchor) ? item.anchor : Math.max(-1, paragraphItems.length - 1);
+    if (!objectMap.has(key)) {
+      objectMap.set(key, []);
+    }
+    objectMap.get(key).push(item);
+  });
+
+  const merged = [];
+  (objectMap.get(-1) || []).forEach((item) => {
+    objectToParagraphs(item).forEach((text) => merged.push({ kind: "object", style: "body", text }));
+  });
+  paragraphItems.forEach((item, index) => {
+    merged.push(item);
+    (objectMap.get(index) || []).forEach((objectItem) => {
+      objectToParagraphs(objectItem).forEach((text) => merged.push({ kind: "object", style: "body", text }));
+    });
+  });
+  return merged.filter((item) => item.text);
+}
+
+function exportTempHwpBytes() {
+  const merged = buildWriterFlowParagraphs();
+  const tempDoc = HwpDocument.createEmpty();
+  tempDoc.createBlankDocument();
+  const paragraphs = merged.map((item) => item.text).filter(Boolean);
+  if (paragraphs.length > 0) {
+    let paraIndex = 0;
+    paragraphs.forEach((paragraphText, index) => {
+      tempDoc.insertText(0, paraIndex, 0, paragraphText);
+      if (index < paragraphs.length - 1) {
+        const length = tempDoc.getParagraphLength(0, paraIndex);
+        tempDoc.splitParagraph(0, paraIndex, length);
+        paraIndex += 1;
+      }
+    });
+  }
+  const bytes = tempDoc.exportHwp();
+  tempDoc.free();
+  return bytes;
+}
+
 function syncWriterFromEditor(options = {}) {
   const { rerenderEditor = false, status = "" } = options;
   rebuildWriterFromParagraphItems(getWriterEditorValues());
@@ -4046,11 +4132,11 @@ elements.exportPptx.addEventListener("click", async () => {
   setStatus("슬라이드를 PPTX로 저장했습니다.");
 });
 
-elements.exportDocument.addEventListener("click", () => {
+elements.exportDocument.addEventListener("click", async () => {
   if (!state.doc) {
     return;
   }
-  const bytes = state.doc.exportHwp();
+  const bytes = exportTempHwpBytes();
   const fileName = state.fileName.endsWith(".hwp") ? state.fileName : "office-agent-document.hwp";
   downloadBytes(bytes, fileName);
   setStatus("문서를 HWP로 저장했습니다.", fileName);

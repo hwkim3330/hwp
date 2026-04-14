@@ -200,10 +200,14 @@ def build_parser():
     search = sub.add_parser("search", help="run web search", parents=[common])
     search.add_argument("query", help="search query")
 
+    gemini = sub.add_parser("gemini", help="run local Gemini CLI through hwp server", parents=[common])
+    gemini.add_argument("prompt", help="Gemini CLI prompt")
+    gemini.add_argument("--model", default="", help="override Gemini CLI model")
+
     plan = sub.add_parser("plan", help="run document planner", parents=[common])
     plan.add_argument("prompt", help="planner prompt")
     plan.add_argument("--mode", default="writer", choices=["writer", "notes", "sheet", "slides"])
-    plan.add_argument("--model-profile", default="balanced", choices=["balanced", "fast", "deep", "experimental"])
+    plan.add_argument("--model-profile", default="balanced", choices=["balanced", "fast", "deep", "experimental", "gemini"])
 
     browser = sub.add_parser("browser-plan", help="create browser computer-use plan", parents=[common])
     browser.add_argument("goal", help="browser goal")
@@ -214,7 +218,7 @@ def build_parser():
     workspace.add_argument("prompt", help="prompt to apply")
     workspace.add_argument("--output", help="output workspace json path")
     workspace.add_argument("--mode", default="writer", choices=["writer", "notes", "sheet", "slides"])
-    workspace.add_argument("--model-profile", default="balanced", choices=["balanced", "fast", "deep", "experimental"])
+    workspace.add_argument("--model-profile", default="balanced", choices=["balanced", "fast", "deep", "experimental", "gemini"])
 
     return parser
 
@@ -234,6 +238,13 @@ def main():
             return 0
         if args.command == "search":
             data = http_json("POST", f"{base}/api/search", {"query": args.query})
+            print_output(data, pretty=not args.compact)
+            return 0
+        if args.command == "gemini":
+            payload = {"prompt": args.prompt}
+            if args.model:
+                payload["model"] = args.model
+            data = http_json("POST", f"{base}/api/gemini-cli/run", payload)
             print_output(data, pretty=not args.compact)
             return 0
         if args.command == "plan":

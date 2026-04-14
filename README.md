@@ -97,6 +97,17 @@ cd /Users/parksik/hwp
 
 기본 포트는 `127.0.0.1:8081`이며, 앱의 모델 프로필에서 `SuperGemma MLX`를 선택하면 해당 런타임을 사용합니다.
 
+### Gemini CLI 보조 런타임
+
+로컬 `gemini` CLI가 설치되어 있으면 앱의 모델 프로필에서 `Gemini CLI 보조`를 선택할 수 있습니다.
+
+```bash
+export GEMINI_CLI_CMD="gemini"
+export GEMINI_CLI_MODEL="gemini-3-flash-preview"
+```
+
+이 프로필은 기본 Ollama/Gemma 경로를 대체하는 것이 아니라, 보조 플래너로 `Gemini CLI`를 호출하는 용도입니다.
+
 ## 구조
 
 - `app.py`: 정적 파일 서버 + 에이전트 플래너 API
@@ -146,6 +157,7 @@ CLI:
 ```bash
 python3 scripts/hwp_cli.py runtime
 python3 scripts/hwp_cli.py search "Gemma 4 official docs"
+python3 scripts/hwp_cli.py gemini "현재 문서를 한국어 보고서 구조로 바꿔야 할 핵심만 JSON으로 정리해줘"
 python3 scripts/hwp_cli.py plan "회의록 형태로 정리해줘" --mode writer
 python3 scripts/hwp_cli.py browser-plan "Gemma 4 release notes 찾아줘"
 python3 scripts/hwp_cli.py workspace-agent .runtime/sample.json "보고서 형식으로 정리해줘" --mode writer

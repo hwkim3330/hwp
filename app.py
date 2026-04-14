@@ -36,6 +36,9 @@ MLX_EXPERIMENTAL_VENV = Path(os.environ.get("MLX_EXPERIMENTAL_VENV", str(ROOT / 
 MLX_EXPERIMENTAL_SERVER = Path(
     os.environ.get("MLX_EXPERIMENTAL_SERVER", str(MLX_EXPERIMENTAL_VENV / "bin" / "mlx_lm.server"))
 ).expanduser()
+GEMINI_CLI_CMD = os.environ.get("GEMINI_CLI_CMD", "gemini")
+GEMINI_CLI_MODEL = os.environ.get("GEMINI_CLI_MODEL", "gemini-3-flash-preview")
+GEMINI_CLI_TIMEOUT_SECONDS = float(os.environ.get("GEMINI_CLI_TIMEOUT_SECONDS", "45"))
 HWPFORGE_CMD = os.environ.get("HWPFORGE_CMD", "hwpforge")
 ENABLE_WEB_SEARCH = os.environ.get("ENABLE_WEB_SEARCH", "1") != "0"
 ENABLE_VISION_EXPERIMENTS = os.environ.get("ENABLE_VISION_EXPERIMENTS", "1") != "0"
@@ -773,6 +776,22 @@ def extract_json_object(text):
     return match.group(0)
 
 
+def extract_last_json_object(text):
+    raw = str(text or "").strip()
+    if not raw:
+        raise ValueError("no JSON object found")
+    for index in range(len(raw) - 1, -1, -1):
+        if raw[index] != "{":
+            continue
+        candidate = raw[index:]
+        try:
+            json.loads(candidate)
+            return candidate
+        except Exception:
+            continue
+    return extract_json_object(raw)
+
+
 def is_ollama_base_url():
     return "127.0.0.1:11434" in LLM_BASE_URL or "localhost:11434" in LLM_BASE_URL
 
@@ -787,6 +806,14 @@ def resolve_llm_config(model_profile="balanced"):
             "model": MLX_EXPERIMENTAL_MODEL,
             "api_key": "",
             "provider": "mlx",
+        }
+    if profile == "gemini":
+        return {
+            "profile": "gemini",
+            "label": "gemini cli",
+            "provider": "gemini-cli",
+            "model": GEMINI_CLI_MODEL,
+            "command": resolve_gemini_cli_cmd(),
         }
     return {
         "profile": profile,
@@ -825,6 +852,40 @@ def mlx_runtime_status():
     except Exception as exc:
         status["detail"] = str(exc)
     return status
+
+
+def resolve_gemini_cli_cmd():
+    explicit = Path(GEMINI_CLI_CMD).expanduser()
+    if explicit.is_file():
+        return str(explicit)
+    found = shutil.which(GEMINI_CLI_CMD)
+    if found:
+        return found
+    return None
+
+
+def gemini_cli_status():
+    command = resolve_gemini_cli_cmd()
+    if not command:
+        return {"available": False, "command": None, "model": GEMINI_CLI_MODEL, "detail": "gemini CLI not found"}
+    try:
+        result = subprocess.run(
+            [command, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            cwd=str(ROOT),
+        )
+    except Exception as exc:
+        return {"available": False, "command": command, "model": GEMINI_CLI_MODEL, "detail": str(exc)}
+    detail = (result.stdout or result.stderr).strip().splitlines()
+    return {
+        "available": result.returncode == 0,
+        "command": command,
+        "model": GEMINI_CLI_MODEL,
+        "detail": detail[0] if detail else "gemini CLI ready",
+    }
 
 
 def validate_plan(plan):
@@ -1639,6 +1700,8 @@ def call_llm(user_prompt, document, model_profile="balanced"):
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_content},
     ]
+    if llm_config.get("provider") == "gemini-cli":
+        return call_gemini_cli_llm(messages, llm_config), search_results, memory_results
     if is_ollama_config(llm_config):
         return call_ollama_llm(messages, llm_config), search_results, memory_results
 
@@ -1693,6 +1756,68 @@ def call_ollama_json(messages, llm_config):
 
 def call_ollama_llm(messages, llm_config):
     return validate_plan(call_ollama_json(messages, llm_config))
+
+
+def run_gemini_cli(prompt, model=None):
+    status = gemini_cli_status()
+    command = status.get("command")
+    if not command:
+        raise FileNotFoundError("gemini CLI not found")
+    args = [
+        command,
+        "-p",
+        str(prompt or "").strip(),
+        "--output-format",
+        "json",
+        "--approval-mode",
+        "plan",
+    ]
+    if model or status.get("model"):
+        args.extend(["--model", str(model or status.get("model"))])
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        timeout=GEMINI_CLI_TIMEOUT_SECONDS,
+        check=False,
+        cwd=str(ROOT),
+    )
+    stdout = (result.stdout or "").strip()
+    stderr = (result.stderr or "").strip()
+    raw = stdout or stderr
+    if result.returncode != 0:
+        raise RuntimeError(raw or stderr or f"gemini CLI exited with {result.returncode}")
+    parse_candidates = [candidate for candidate in (stdout, stderr, f"{stdout}\n{stderr}".strip()) if candidate]
+    outer = None
+    for candidate in parse_candidates:
+        try:
+            outer = json.loads(extract_last_json_object(candidate))
+            break
+        except Exception:
+            continue
+    if outer is None:
+        raise ValueError("gemini CLI returned no parseable JSON envelope")
+    response_text = outer.get("response", "")
+    if not response_text:
+        raise ValueError("gemini CLI returned no response payload")
+    return {
+        "session_id": outer.get("session_id"),
+        "response": response_text,
+        "stats": outer.get("stats", {}),
+        "raw": outer,
+    }
+
+
+def call_gemini_cli_llm(messages, llm_config):
+    system_prompt = next((item.get("content", "") for item in messages if item.get("role") == "system"), SYSTEM_PROMPT)
+    user_prompt = next((item.get("content", "") for item in messages if item.get("role") == "user"), "")
+    prompt = (
+        f"{system_prompt}\n\n"
+        "반드시 JSON 객체 하나만 반환해. 설명, 코드블록, 추가 문장은 금지.\n\n"
+        f"입력:\n{user_prompt}"
+    )
+    result = run_gemini_cli(prompt, model=llm_config.get("model"))
+    return validate_plan(json.loads(extract_json_object(str(result.get("response", "")))))
 
 
 def resolve_hwpforge_cmd():
@@ -1772,12 +1897,19 @@ def permission_registry():
             "status": "disabled" if not ENABLE_BROWSER_AUTOMATION else "experimental",
             "detail": "브라우저 계획 생성 및 단계별 실행",
         },
+        {
+            "id": "gemini.cli",
+            "label": "Gemini CLI",
+            "status": "granted" if gemini_cli_status()["available"] else "disabled",
+            "detail": "로컬 Gemini CLI를 보조 플래너와 리서치 엔진으로 호출",
+        },
     ]
 
 
 def tool_registry():
     hwpforge = hwpforge_status()
     mlx_status = mlx_runtime_status()
+    gemini_status = gemini_cli_status()
     return [
         {
             "id": "writer_blocks",
@@ -1806,6 +1938,13 @@ def tool_registry():
             "category": "llm",
             "status": "ready" if mlx_status["ready"] else "partial",
             "detail": mlx_status["detail"],
+        },
+        {
+            "id": "gemini_cli",
+            "label": "Gemini CLI",
+            "category": "llm",
+            "status": "ready" if gemini_status["available"] else "offline",
+            "detail": f"{gemini_status['model']} via {gemini_status['command'] or 'unavailable'}",
         },
         {
             "id": "vision_lab",
@@ -1861,10 +2000,12 @@ def tool_registry():
 
 def runtime_registry():
     mlx_status = mlx_runtime_status()
+    gemini_status = gemini_cli_status()
     return {
         "session": {"id": SESSION_ID, "eventCount": len(SESSION_EVENTS)},
         "llm": {"model": LLM_MODEL, "baseUrl": LLM_BASE_URL, "ollama": is_ollama_base_url()},
         "mlxExperimental": mlx_status,
+        "geminiCli": gemini_status,
         "onlyoffice": {"docsUrl": ONLYOFFICE_DOCS_URL, "sessions": len(ONLYOFFICE_SESSIONS)},
         "collabora": {"url": COLLABORA_URL},
         "computerUse": {"sessions": len(BROWSER_USE_SESSIONS), "reference": browser_use_reference_status()},
@@ -2243,6 +2384,36 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/hwpforge/status":
             self._send_json({"ok": True, "hwpforge": hwpforge_status()})
+            return
+        if self.path == "/api/gemini-cli/run":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(body or "{}")
+                prompt = str(payload.get("prompt", "")).strip()
+                model = str(payload.get("model", GEMINI_CLI_MODEL)).strip() or GEMINI_CLI_MODEL
+                if not prompt:
+                    raise ValueError("prompt is required")
+                result = run_gemini_cli(prompt, model=model)
+                log_session_event(
+                    "gemini_cli_run",
+                    {
+                        "prompt": prompt[:400],
+                        "model": model,
+                        "session_id": result.get("session_id", ""),
+                    },
+                )
+                remember_memory("gemini", f"Gemini CLI · {model}", prompt, {"session_id": result.get("session_id", "")})
+                self._send_json(
+                    {
+                        "ok": True,
+                        "session_id": result.get("session_id"),
+                        "response": result.get("response", ""),
+                        "stats": result.get("stats", {}),
+                    }
+                )
+            except Exception as exc:
+                self._send_json({"ok": False, "error": "gemini_cli_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         if self.path != "/api/plan":
             self._send_json({"ok": False, "error": "not found"}, status=HTTPStatus.NOT_FOUND)

@@ -591,6 +591,7 @@ function setMode(mode) {
   };
   topMap[mode]?.classList.add("active");
   elements.modeHint.textContent = `현재 대상: ${mode[0].toUpperCase()}${mode.slice(1)}`;
+  syncEditorEngineRecommendation();
   persistWorkspace();
 }
 
@@ -1154,6 +1155,28 @@ function externalEditorUrl() {
     return health.collabora?.url || "http://127.0.0.1:9980";
   }
   return health.onlyoffice?.docsUrl || "http://127.0.0.1:8080";
+}
+
+function recommendedEditorEngine() {
+  if (state.mode === "sheet" || state.mode === "slides") {
+    return "onlyoffice";
+  }
+  return "native";
+}
+
+function syncEditorEngineRecommendation() {
+  if (!elements.editorEngine) {
+    return;
+  }
+  const recommended = recommendedEditorEngine();
+  if (elements.editorEngine.value === "native" || elements.editorEngine.value === "onlyoffice") {
+    elements.editorEngine.value = recommended;
+  }
+  if (recommended === "native") {
+    setEngineMeta("추천 엔진: Native. Writer는 로컬 편집과 HWP/HWPX 작업이 우선입니다.");
+  } else {
+    setEngineMeta("추천 엔진: ONLYOFFICE. Sheet와 Slides는 OOXML 편집기가 더 적합합니다.");
+  }
 }
 
 function renderSearchResults(results) {
@@ -4417,9 +4440,7 @@ async function boot() {
     openAppModal();
   }
   await applyStartupCommandFromUrl();
-  if (elements.editorEngine) {
-    elements.editorEngine.value = "native";
-  }
+  syncEditorEngineRecommendation();
 }
 
 function applyGuiAction(kind) {

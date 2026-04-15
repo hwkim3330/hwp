@@ -43,30 +43,23 @@
     </header>
     <div class="shell">
       <aside class="panel panel-left">
-        <div class="brand">
-          <p class="eyebrow">Korean Agent Workspace</p>
-          <h1>hwp</h1>
-          <p class="lede">
-            한국어 문서, 조사, 자동화, 비전 실험을 하나로 묶는 로컬 오피스 에이전트 워크스테이션.
-          </p>
-        </div>
-
         <div class="card">
-          <h2>문서 요약</h2>
+          <p class="eyebrow">Overview</p>
+          <h2>현재 문서</h2>
           <div id="doc-meta" class="meta"></div>
         </div>
 
-        <details class="card drawer-card" open>
+        <details class="card drawer-card">
           <summary>문단 개요</summary>
           <div id="outline-box" class="meta outline-box">문서가 비어 있습니다.</div>
         </details>
 
-        <details class="card drawer-card" open>
+        <details class="card drawer-card">
           <summary>최근 작업</summary>
           <div id="recent-commands" class="ops-results">아직 최근 작업이 없습니다.</div>
         </details>
 
-        <details class="card drawer-card" open>
+        <details class="card drawer-card">
           <summary>작업 기억</summary>
           <div id="memory-meta" class="reply planner-meta">기억 계층 준비 중</div>
           <div id="memory-recall" class="ops-results">아직 회수된 기억이 없습니다.</div>
@@ -136,6 +129,22 @@
             class="command-input"
             placeholder="예: 인사평가 회의 결과를 공문 초안으로 정리해줘. 또는 Gemma 4 최신 공식 문서 2개 찾아서 핵심 링크를 정리해줘."
           ></textarea>
+          <div class="command-inline-controls">
+            <label class="control-toggle">
+              <input id="search-enabled" type="checkbox" checked />
+              <span>검색 포함</span>
+            </label>
+            <label class="control-select">
+              <span>모델</span>
+              <select id="model-profile">
+                <option value="balanced">균형형</option>
+                <option value="fast">빠른 응답</option>
+                <option value="deep">깊은 작성</option>
+                <option value="experimental">SuperGemma MLX</option>
+                <option value="gemini">Gemini CLI 보조</option>
+              </select>
+            </label>
+          </div>
           <div class="command-deck-actions">
             <div class="prompt-list">
               <button class="prompt-chip" data-prompt="팀 주간업무보고 초안을 제목, 요약, 진행현황 표, 다음주 계획으로 작성해줘.">
@@ -152,6 +161,15 @@
               <button id="save-memory" class="secondary">기억 저장</button>
               <button id="run-agent">실행</button>
             </div>
+          </div>
+          <div class="command-inline-stack">
+            <div class="prompt-list">
+              <button class="prompt-chip operator-profile" data-profile="writer">작성 중심</button>
+              <button class="prompt-chip operator-profile" data-profile="research">조사 중심</button>
+              <button class="prompt-chip operator-profile" data-profile="automation">자동화 중심</button>
+            </div>
+            <div id="workflow-hint" class="reply planner-meta">문서 작업을 버튼으로 고르고 검색 포함 여부를 정한 뒤 실행합니다.</div>
+            <div id="operator-profile-meta" class="reply planner-meta">모델, 검색, 라우트 감각을 한 번에 바꿉니다.</div>
           </div>
           <div id="agent-reply" class="reply">문서 작업과 브라우저 작업을 여기서 바로 시작합니다.</div>
         </section>
@@ -262,8 +280,8 @@
         <div class="card command-card">
           <div class="command-head">
             <div>
-              <p class="eyebrow">Command Center</p>
-              <h2>hwp Core</h2>
+              <p class="eyebrow">Inspector</p>
+              <h2>현재 상태</h2>
             </div>
             <span id="agent-runtime" class="badge runtime-badge">대기</span>
           </div>
@@ -306,56 +324,6 @@
         </div>
 
         <details class="card ops-card drawer-card">
-          <summary>문서 액션</summary>
-          <div class="command-head">
-            <div>
-              <p class="eyebrow">Workflow</p>
-              <h2>Document Actions</h2>
-            </div>
-          </div>
-          <div class="prompt-list">
-            <button id="action-research-note" class="prompt-chip">연구노트</button>
-            <button id="action-research-complete" class="prompt-chip">연구노트 완성</button>
-            <button id="action-minutes" class="prompt-chip">회의록</button>
-            <button id="action-report" class="prompt-chip">보고서</button>
-            <button id="action-slides" class="prompt-chip">슬라이드화</button>
-          </div>
-          <div class="button-row compact-row" style="margin-top: 10px;">
-            <label class="control-toggle">
-              <input id="search-enabled" type="checkbox" checked />
-              <span>검색 포함</span>
-            </label>
-            <label class="control-select">
-              <span>모델</span>
-              <select id="model-profile">
-                <option value="balanced">균형형</option>
-                <option value="fast">빠른 응답</option>
-                <option value="deep">깊은 작성</option>
-                <option value="experimental">SuperGemma MLX</option>
-                <option value="gemini">Gemini CLI 보조</option>
-              </select>
-            </label>
-          </div>
-          <div id="workflow-hint" class="reply planner-meta">문서 작업을 버튼으로 고르고 검색 포함 여부를 정한 뒤 실행합니다.</div>
-        </details>
-
-        <details class="card ops-card drawer-card">
-          <summary>운용 프로필</summary>
-          <div class="command-head">
-            <div>
-              <p class="eyebrow">Operator</p>
-              <h2>Operator Profile</h2>
-            </div>
-          </div>
-          <div class="prompt-list">
-            <button class="prompt-chip operator-profile" data-profile="writer">작성 중심</button>
-            <button class="prompt-chip operator-profile" data-profile="research">조사 중심</button>
-            <button class="prompt-chip operator-profile" data-profile="automation">자동화 중심</button>
-          </div>
-          <div id="operator-profile-meta" class="reply planner-meta">모델, 검색, 라우트 감각을 한 번에 바꿉니다.</div>
-        </details>
-
-        <details class="card ops-card drawer-card">
           <summary>문서 엔진</summary>
           <div class="command-head">
             <div>
@@ -378,7 +346,8 @@
           <div id="onlyoffice-sessions" class="ops-results">아직 생성된 세션이 없습니다.</div>
         </details>
 
-        <div class="card ops-card">
+        <details class="card ops-card drawer-card" open>
+          <summary>브라우저 작업</summary>
           <div class="command-head">
             <div>
               <p class="eyebrow">Computer Use</p>
@@ -407,7 +376,7 @@
           <div id="computer-use-meta" class="reply planner-meta">아직 생성된 브라우저 계획이 없습니다.</div>
           <div id="computer-use-plan" class="ops-results">목표를 입력하면 가장 최근 계획 한 개만 여기에 표시합니다.</div>
           <div id="computer-use-sessions" class="ops-results compact-sessions">아직 브라우저 세션이 없습니다.</div>
-        </div>
+        </details>
 
         <details class="card ops-card drawer-card">
           <summary>검색</summary>

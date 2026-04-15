@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "hwp": {
+      "command": "python3",
+      "args": ["scripts/hwp_mcp.py"]
+    }
+  }
+}

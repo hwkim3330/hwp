@@ -162,3 +162,19 @@ python3 scripts/hwp_cli.py plan "회의록 형태로 정리해줘" --mode writer
 python3 scripts/hwp_cli.py browser-plan "Gemma 4 release notes 찾아줘"
 python3 scripts/hwp_cli.py workspace-agent .runtime/sample.json "보고서 형식으로 정리해줘" --mode writer
 ```
+
+MCP:
+
+```bash
+# stdio MCP server
+python3 scripts/hwp_mcp.py
+```
+
+프로젝트 루트의 [.mcp.json](/Users/parksik/hwp/.mcp.json)은 `Claude Code`, `Gemini CLI` 같은 MCP 클라이언트가 `hwp` 도구를 직접 붙일 수 있도록 준비된 기본 설정입니다.
+
+현재 MCP 도구:
+- `hwp_runtime`
+- `hwp_search`
+- `hwp_plan`
+- `hwp_browser_plan`
+- `hwp_gemini`

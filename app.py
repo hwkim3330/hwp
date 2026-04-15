@@ -59,6 +59,7 @@ MEMORY_ITEMS = []
 MAX_MEMORY_ITEMS = 400
 APP_INFO_CACHE = {"ts": 0.0, "data": None}
 APP_INFO_TTL_SECONDS = 900
+HWP_MCP_SERVER = ROOT / "scripts" / "hwp_mcp.py"
 
 
 SYSTEM_PROMPT = """당신은 한국어 오피스 문서 편집 에이전트다.
@@ -885,6 +886,14 @@ def gemini_cli_status():
         "command": command,
         "model": GEMINI_CLI_MODEL,
         "detail": detail[0] if detail else "gemini CLI ready",
+    }
+
+
+def mcp_server_status():
+    return {
+        "available": HWP_MCP_SERVER.is_file(),
+        "path": str(HWP_MCP_SERVER),
+        "detail": "local stdio MCP server for runtime/search/plan/browser/gemini",
     }
 
 
@@ -2080,6 +2089,7 @@ def tool_registry():
     hwpforge = hwpforge_status()
     mlx_status = mlx_runtime_status()
     gemini_status = gemini_cli_status()
+    mcp_status = mcp_server_status()
     return [
         {
             "id": "writer_blocks",
@@ -2115,6 +2125,13 @@ def tool_registry():
             "category": "llm",
             "status": "ready" if gemini_status["available"] else "offline",
             "detail": f"{gemini_status['model']} via {gemini_status['command'] or 'unavailable'}",
+        },
+        {
+            "id": "mcp_bridge",
+            "label": "MCP Bridge",
+            "category": "automation",
+            "status": "ready" if mcp_status["available"] else "offline",
+            "detail": mcp_status["detail"],
         },
         {
             "id": "vision_lab",
@@ -2171,11 +2188,13 @@ def tool_registry():
 def runtime_registry():
     mlx_status = mlx_runtime_status()
     gemini_status = gemini_cli_status()
+    mcp_status = mcp_server_status()
     return {
         "session": {"id": SESSION_ID, "eventCount": len(SESSION_EVENTS)},
         "llm": {"model": LLM_MODEL, "baseUrl": LLM_BASE_URL, "ollama": is_ollama_base_url()},
         "mlxExperimental": mlx_status,
         "geminiCli": gemini_status,
+        "mcp": mcp_status,
         "onlyoffice": {"docsUrl": ONLYOFFICE_DOCS_URL, "sessions": len(ONLYOFFICE_SESSIONS)},
         "collabora": {"url": COLLABORA_URL},
         "computerUse": {"sessions": len(BROWSER_USE_SESSIONS), "reference": browser_use_reference_status()},

@@ -66,9 +66,72 @@
       let prevCursor = { ...cursor };
       let whip = null;
       let overlayMode = "whip";
+      let overlayStyle = { color: "yellow", size: 1, intensity: 0.3 };
       let handleAngle = P.baseTargetAngle;
       let handleAngVel = 0;
       let pulsePhase = 0;
+
+      function overlayPalette() {
+        const map = {
+          yellow: {
+            coreFill: "rgba(255, 252, 235, 0.96)",
+            coreStroke: "rgba(255, 190, 96, 0.86)",
+            ring: "rgba(255, 248, 209, 0.92)",
+            fillA: [255, 230, 76],
+            fillB: [255, 214, 10],
+            stroke: [255, 199, 0],
+            spot: "rgba(255, 245, 157, 0.98)",
+            spotGlow: "rgba(255, 244, 168, 0.18)",
+            whipOuter: "#fff7ea",
+            whipInner: "#1b1714",
+            whipGlow: "rgba(255, 196, 120, 0.34)",
+          },
+          green: {
+            coreFill: "rgba(240, 255, 244, 0.96)",
+            coreStroke: "rgba(108, 196, 133, 0.86)",
+            ring: "rgba(218, 255, 227, 0.92)",
+            fillA: [132, 230, 166],
+            fillB: [52, 201, 111],
+            stroke: [24, 167, 93],
+            spot: "rgba(178, 255, 196, 0.96)",
+            spotGlow: "rgba(126, 230, 160, 0.18)",
+            whipOuter: "#effff4",
+            whipInner: "#153021",
+            whipGlow: "rgba(85, 214, 142, 0.32)",
+          },
+          pink: {
+            coreFill: "rgba(255, 244, 249, 0.96)",
+            coreStroke: "rgba(244, 133, 173, 0.86)",
+            ring: "rgba(255, 222, 236, 0.92)",
+            fillA: [255, 186, 214],
+            fillB: [255, 113, 170],
+            stroke: [236, 71, 146],
+            spot: "rgba(255, 204, 228, 0.96)",
+            spotGlow: "rgba(255, 149, 196, 0.18)",
+            whipOuter: "#fff2f8",
+            whipInner: "#341723",
+            whipGlow: "rgba(255, 126, 182, 0.34)",
+          },
+          blue: {
+            coreFill: "rgba(242, 248, 255, 0.96)",
+            coreStroke: "rgba(112, 175, 255, 0.86)",
+            ring: "rgba(220, 238, 255, 0.92)",
+            fillA: [143, 200, 255],
+            fillB: [67, 149, 255],
+            stroke: [38, 119, 235],
+            spot: "rgba(190, 224, 255, 0.96)",
+            spotGlow: "rgba(122, 188, 255, 0.18)",
+            whipOuter: "#eff6ff",
+            whipInner: "#172538",
+            whipGlow: "rgba(109, 176, 255, 0.34)",
+          },
+        };
+        return map[overlayStyle.color] || map.yellow;
+      }
+
+      function rgba(rgb, alpha) {
+        return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
+      }
 
       function resize() {
         width = canvas.width = window.innerWidth;
@@ -312,14 +375,16 @@
       }
 
       function drawCursorCore() {
+        const palette = overlayPalette();
+        const scale = overlayStyle.size || 1;
         ctx.beginPath();
-        ctx.arc(cursor.x, cursor.y, 8, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255, 247, 230, 0.96)";
+        ctx.arc(cursor.x, cursor.y, 8 * scale, 0, Math.PI * 2);
+        ctx.fillStyle = palette.coreFill;
         ctx.fill();
 
         ctx.beginPath();
-        ctx.arc(cursor.x, cursor.y, 16, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(255, 190, 96, 0.86)";
+        ctx.arc(cursor.x, cursor.y, 16 * scale, 0, Math.PI * 2);
+        ctx.strokeStyle = palette.coreStroke;
         ctx.lineWidth = 3;
         ctx.stroke();
       }
@@ -345,37 +410,43 @@
 
       function drawHighlighter() {
         ctx.clearRect(0, 0, width, height);
-        const pulse = 1 + Math.sin(pulsePhase) * 0.04;
+        const palette = overlayPalette();
+        const scale = overlayStyle.size || 1;
+        const intensity = overlayStyle.intensity || 0.3;
+        const pulse = (1 + Math.sin(pulsePhase) * 0.04) * scale;
         ctx.save();
         ctx.translate(cursor.x, cursor.y);
         ctx.rotate(-0.24);
         ctx.beginPath();
         ctx.ellipse(0, 0, 54 * pulse, 30 * pulse, 0, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255, 230, 76, 0.18)";
+        ctx.fillStyle = rgba(palette.fillA, Math.max(0.12, intensity * 0.6));
         ctx.fill();
         ctx.beginPath();
         ctx.ellipse(0, 0, 44 * pulse, 24 * pulse, 0, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255, 214, 10, 0.28)";
+        ctx.fillStyle = rgba(palette.fillB, Math.max(0.18, intensity));
         ctx.fill();
         ctx.beginPath();
         ctx.ellipse(0, 0, 46 * pulse, 25 * pulse, 0, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(255, 199, 0, 0.95)";
+        ctx.strokeStyle = rgba(palette.stroke, Math.min(0.98, intensity + 0.65));
         ctx.lineWidth = 6;
         ctx.stroke();
         ctx.restore();
-        drawReticle(18, "rgba(255, 248, 209, 0.92)", 2.5);
+        drawReticle(18 * scale, palette.ring, 2.5);
         ctx.beginPath();
-        ctx.arc(cursor.x, cursor.y, 6, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255, 252, 235, 0.96)";
+        ctx.arc(cursor.x, cursor.y, 6 * scale, 0, Math.PI * 2);
+        ctx.fillStyle = palette.coreFill;
         ctx.fill();
       }
 
       function drawSpotlight() {
         ctx.clearRect(0, 0, width, height);
-        const pulse = 1 + Math.sin(pulsePhase * 0.8) * 0.03;
-        ctx.fillStyle = "rgba(10, 16, 28, 0.30)";
+        const palette = overlayPalette();
+        const scale = overlayStyle.size || 1;
+        const intensity = overlayStyle.intensity || 0.3;
+        const pulse = (1 + Math.sin(pulsePhase * 0.8) * 0.03) * scale;
+        ctx.fillStyle = `rgba(10, 16, 28, ${Math.max(0.2, intensity + 0.08)})`;
         ctx.fillRect(0, 0, width, height);
-        const gradient = ctx.createRadialGradient(cursor.x, cursor.y, 20, cursor.x, cursor.y, 148 * pulse);
+        const gradient = ctx.createRadialGradient(cursor.x, cursor.y, 20 * scale, cursor.x, cursor.y, 148 * pulse);
         gradient.addColorStop(0, "rgba(255,255,255,0.0)");
         gradient.addColorStop(0.36, "rgba(255,255,255,0.0)");
         gradient.addColorStop(0.72, "rgba(255,255,255,0.65)");
@@ -386,10 +457,10 @@
         ctx.arc(cursor.x, cursor.y, 148 * pulse, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalCompositeOperation = "source-over";
-        drawReticle(22, "rgba(255, 245, 157, 0.98)", 3);
+        drawReticle(22 * scale, palette.spot, 3);
         ctx.beginPath();
         ctx.arc(cursor.x, cursor.y, 74 * pulse, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(255, 244, 168, 0.18)";
+        ctx.strokeStyle = palette.spotGlow;
         ctx.lineWidth = 18;
         ctx.stroke();
       }
@@ -401,9 +472,12 @@
 
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
-        ctx.strokeStyle = "#fff7ea";
-        ctx.shadowColor = "rgba(255, 196, 120, 0.34)";
-        ctx.shadowBlur = 14;
+        const palette = overlayPalette();
+        const scale = overlayStyle.size || 1;
+        const intensity = overlayStyle.intensity || 0.3;
+        ctx.strokeStyle = palette.whipOuter;
+        ctx.shadowColor = palette.whipGlow;
+        ctx.shadowBlur = 10 + intensity * 16;
 
         ctx.beginPath();
         ctx.moveTo(whip[0].x, whip[0].y);
@@ -411,7 +485,7 @@
           const segment = whipSegmentBezier(whip, index);
           ctx.bezierCurveTo(segment.cp1x, segment.cp1y, segment.cp2x, segment.cp2y, segment.x2, segment.y2);
         }
-        ctx.lineWidth = P.lineWidthTip + P.outlineWidth * 2;
+        ctx.lineWidth = (P.lineWidthTip + P.outlineWidth * 2) * scale;
         ctx.stroke();
 
         const thickLinks = Math.min(P.handleThickSegments, whip.length - 1);
@@ -422,16 +496,16 @@
             const segment = whipSegmentBezier(whip, index);
             ctx.bezierCurveTo(segment.cp1x, segment.cp1y, segment.cp2x, segment.cp2y, segment.x2, segment.y2);
           }
-          ctx.lineWidth = P.lineWidthHandle + P.handleExtraWidth + P.outlineWidth * 2;
+          ctx.lineWidth = (P.lineWidthHandle + P.handleExtraWidth + P.outlineWidth * 2) * scale;
           ctx.stroke();
         }
 
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = "#1b1714";
+        ctx.strokeStyle = palette.whipInner;
         for (let index = 0; index < whip.length - 1; index += 1) {
           const t = index / Math.max(1, whip.length - 2);
           const extra = index < P.handleThickSegments ? P.handleExtraWidth : 0;
-          ctx.lineWidth = lerp(P.lineWidthHandle, P.lineWidthTip, t) + extra;
+          ctx.lineWidth = (lerp(P.lineWidthHandle, P.lineWidthTip, t) + extra) * scale;
           const segment = whipSegmentBezier(whip, index);
           ctx.beginPath();
           ctx.moveTo(whip[index].x, whip[index].y);
@@ -462,6 +536,13 @@
         }
         if (payload?.mode) {
           overlayMode = payload.mode;
+        }
+        if (payload?.style) {
+          overlayStyle = {
+            color: payload.style.color || overlayStyle.color,
+            size: Number(payload.style.size || overlayStyle.size || 1),
+            intensity: Number(payload.style.intensity || overlayStyle.intensity || 0.3),
+          };
         }
       });
 

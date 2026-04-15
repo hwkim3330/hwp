@@ -18,6 +18,7 @@ let monitorTimer = null;
 let cursorTimer = null;
 let cursorOverlayEnabled = false;
 let cursorOverlayMode = "whip";
+let cursorOverlayStyle = { color: "yellow", size: 1, intensity: 0.3 };
 let captureStatus = { ok: true, message: "클립보드 캡처 대기" };
 let hardwareInfo = {
   gpuLabel: "Unknown",
@@ -470,10 +471,11 @@ function updateCursorOverlayFrame() {
       cursor: { x: cursor.x - bounds.x, y: cursor.y - bounds.y },
       enabled: cursorOverlayEnabled,
       mode: cursorOverlayMode,
+      style: cursorOverlayStyle,
     });
   }
   if (monitorWindow && !monitorWindow.isDestroyed()) {
-    monitorWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, cursor, mode: cursorOverlayMode });
+    monitorWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, cursor, mode: cursorOverlayMode, style: cursorOverlayStyle });
   }
 }
 
@@ -565,6 +567,7 @@ async function fetchStats() {
     cursor: screen.getCursorScreenPoint(),
     cursorOverlayEnabled,
     cursorOverlayMode,
+    cursorOverlayStyle,
     captureStatus,
     llm: Array.isArray(ollamaPs.models) && ollamaPs.models.length > 0
       ? {
@@ -660,7 +663,7 @@ function toggleCursorOverlay(forceState) {
     cursorOverlayWindow.hide();
   }
   if (monitorWindow && !monitorWindow.isDestroyed()) {
-    monitorWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled });
+    monitorWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, mode: cursorOverlayMode, style: cursorOverlayStyle });
   }
   return cursorOverlayEnabled;
 }
@@ -671,11 +674,28 @@ function setCursorOverlayMode(mode) {
   if (!cursorOverlayWindow || cursorOverlayWindow.isDestroyed()) {
     createCursorOverlayWindow();
   }
-  cursorOverlayWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, mode: cursorOverlayMode });
+  cursorOverlayWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, mode: cursorOverlayMode, style: cursorOverlayStyle });
   if (monitorWindow && !monitorWindow.isDestroyed()) {
-    monitorWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, mode: cursorOverlayMode });
+    monitorWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, mode: cursorOverlayMode, style: cursorOverlayStyle });
   }
   return cursorOverlayMode;
+}
+
+function setCursorOverlayStyle(style = {}) {
+  const next = {
+    color: ["yellow", "green", "pink", "blue"].includes(style.color) ? style.color : cursorOverlayStyle.color,
+    size: Number.isFinite(Number(style.size)) ? Math.max(0.7, Math.min(1.8, Number(style.size))) : cursorOverlayStyle.size,
+    intensity: Number.isFinite(Number(style.intensity)) ? Math.max(0.12, Math.min(0.6, Number(style.intensity))) : cursorOverlayStyle.intensity,
+  };
+  cursorOverlayStyle = next;
+  if (!cursorOverlayWindow || cursorOverlayWindow.isDestroyed()) {
+    createCursorOverlayWindow();
+  }
+  cursorOverlayWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, mode: cursorOverlayMode, style: cursorOverlayStyle });
+  if (monitorWindow && !monitorWindow.isDestroyed()) {
+    monitorWindow.webContents.send("cursor-overlay-state", { enabled: cursorOverlayEnabled, mode: cursorOverlayMode, style: cursorOverlayStyle });
+  }
+  return cursorOverlayStyle;
 }
 
 function createTray() {
@@ -792,11 +812,15 @@ ipcMain.handle("cursor-overlay:toggle", async (_event, forceState) => {
 });
 
 ipcMain.handle("cursor-overlay:state", async () => {
-  return { ok: true, enabled: cursorOverlayEnabled, mode: cursorOverlayMode };
+  return { ok: true, enabled: cursorOverlayEnabled, mode: cursorOverlayMode, style: cursorOverlayStyle };
 });
 
 ipcMain.handle("cursor-overlay:mode", async (_event, mode) => {
   return { ok: true, mode: setCursorOverlayMode(mode), enabled: cursorOverlayEnabled };
+});
+
+ipcMain.handle("cursor-overlay:style", async (_event, style) => {
+  return { ok: true, style: setCursorOverlayStyle(style), enabled: cursorOverlayEnabled, mode: cursorOverlayMode };
 });
 
 ipcMain.handle("operator:run-preset", async (_event, presetId) => {

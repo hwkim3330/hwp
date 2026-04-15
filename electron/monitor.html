@@ -211,6 +211,44 @@
         align-items: center;
       }
 
+      .overlay-style-grid {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .overlay-style-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .overlay-style-field span {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .overlay-style-field select,
+      .overlay-style-field input {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 8px 10px;
+        background: rgba(255, 255, 255, 0.74);
+        color: var(--ink);
+        font: inherit;
+      }
+
+      .overlay-style-meta {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
       .control-button {
         border: 0;
         border-radius: 14px;
@@ -387,6 +425,26 @@
             <button id="cursor-toggle" class="control-button" type="button">오버레이 켜기</button>
             <div id="cursor-state" class="control-state">현재 꺼짐</div>
           </div>
+          <div class="overlay-style-grid">
+            <label class="overlay-style-field">
+              <span>색상</span>
+              <select id="overlay-color">
+                <option value="yellow">노랑</option>
+                <option value="green">초록</option>
+                <option value="pink">핑크</option>
+                <option value="blue">파랑</option>
+              </select>
+            </label>
+            <label class="overlay-style-field">
+              <span>크기</span>
+              <input id="overlay-size" type="range" min="0.7" max="1.8" step="0.1" value="1" />
+            </label>
+            <label class="overlay-style-field">
+              <span>강도</span>
+              <input id="overlay-intensity" type="range" min="0.12" max="0.6" step="0.02" value="0.3" />
+            </label>
+          </div>
+          <div id="overlay-style-meta" class="overlay-style-meta">노랑 · 크기 1.0 · 강도 0.30</div>
         </article>
 
         <article class="card wide">
@@ -461,6 +519,10 @@
       const overlayModeHighlighter = document.getElementById("overlay-mode-highlighter");
       const overlayModeSpotlight = document.getElementById("overlay-mode-spotlight");
       const overlayModeWhip = document.getElementById("overlay-mode-whip");
+      const overlayColor = document.getElementById("overlay-color");
+      const overlaySize = document.getElementById("overlay-size");
+      const overlayIntensity = document.getElementById("overlay-intensity");
+      const overlayStyleMeta = document.getElementById("overlay-style-meta");
       const presetMeta = document.getElementById("preset-meta");
       const captureButton = document.getElementById("capture-button");
       const captureMeta = document.getElementById("capture-meta");
@@ -477,6 +539,7 @@
       const refreshAppInfo = document.getElementById("refresh-app-info");
       let cursorOverlayEnabled = false;
       let cursorOverlayMode = "whip";
+      let cursorOverlayStyle = { color: "yellow", size: 1, intensity: 0.3 };
 
       for (let index = 0; index < 16; index += 1) {
         const bar = document.createElement("div");
@@ -512,9 +575,27 @@
         return ["한가함", "백그라운드 부하가 낮습니다."];
       }
 
-      function updateCursorOverlayUi(enabled, mode = cursorOverlayMode) {
+      function formatOverlayStyle(style = cursorOverlayStyle) {
+        const colorMap = { yellow: "노랑", green: "초록", pink: "핑크", blue: "파랑" };
+        return `${colorMap[style.color] || style.color} · 크기 ${Number(style.size || 1).toFixed(1)} · 강도 ${Number(style.intensity || 0.3).toFixed(2)}`;
+      }
+
+      function applyOverlayStyleUi(style = {}) {
+        cursorOverlayStyle = {
+          color: style.color || cursorOverlayStyle.color || "yellow",
+          size: Number(style.size || cursorOverlayStyle.size || 1),
+          intensity: Number(style.intensity || cursorOverlayStyle.intensity || 0.3),
+        };
+        if (overlayColor) overlayColor.value = cursorOverlayStyle.color;
+        if (overlaySize) overlaySize.value = String(cursorOverlayStyle.size);
+        if (overlayIntensity) overlayIntensity.value = String(cursorOverlayStyle.intensity);
+        if (overlayStyleMeta) overlayStyleMeta.textContent = formatOverlayStyle(cursorOverlayStyle);
+      }
+
+      function updateCursorOverlayUi(enabled, mode = cursorOverlayMode, style = cursorOverlayStyle) {
         cursorOverlayEnabled = Boolean(enabled);
         cursorOverlayMode = mode || "whip";
+        applyOverlayStyleUi(style);
         cursorToggle.textContent = cursorOverlayEnabled ? "오버레이 끄기" : "오버레이 켜기";
         cursorState.textContent = cursorOverlayEnabled ? `현재 켜짐 · ${cursorOverlayMode}` : `현재 꺼짐 · ${cursorOverlayMode}`;
         overlayModeHighlighter.classList.toggle("is-active", cursorOverlayMode === "highlighter");
@@ -682,7 +763,7 @@
               ? "주변을 어둡게 하고 커서만 스포트라이트로 비춥니다."
               : "포인터를 손잡이로 삼아 뒤에 따라오는 물리 채찍을 그립니다.")
           : "커서가 잘 안 보이면 발표용 오버레이를 켜면 됩니다.";
-        updateCursorOverlayUi(stats.cursorOverlayEnabled, stats.cursorOverlayMode || "whip");
+        updateCursorOverlayUi(stats.cursorOverlayEnabled, stats.cursorOverlayMode || "whip", stats.cursorOverlayStyle || stats.style || cursorOverlayStyle);
         if (stats.captureStatus?.message) {
           captureMeta.textContent = `${stats.captureStatus.message} · 단축키 Cmd/Ctrl + Shift + 1`;
         }
@@ -697,7 +778,7 @@
       });
 
       window.desktopMonitor.onCursorOverlayState((payload) => {
-        updateCursorOverlayUi(payload?.enabled, payload?.mode || "whip");
+        updateCursorOverlayUi(payload?.enabled, payload?.mode || "whip", payload?.style || cursorOverlayStyle);
       });
 
       cursorToggle.addEventListener("click", async () => {
@@ -706,7 +787,7 @@
       });
 
       window.desktopMonitor.getCursorOverlayState().then((result) => {
-        updateCursorOverlayUi(result?.enabled, result?.mode || "whip");
+        updateCursorOverlayUi(result?.enabled, result?.mode || "whip", result?.style || cursorOverlayStyle);
       });
 
       overlayModeHighlighter.addEventListener("click", async () => {
@@ -721,6 +802,29 @@
         const result = await window.desktopMonitor.setCursorOverlayMode("whip");
         updateCursorOverlayUi(result?.enabled, result?.mode || "whip");
       });
+
+      async function pushOverlayStyle() {
+        try {
+          const result = await window.desktopMonitor.setCursorOverlayStyle({
+            color: overlayColor.value,
+            size: Number(overlaySize.value),
+            intensity: Number(overlayIntensity.value),
+          });
+          updateCursorOverlayUi(result?.enabled, result?.mode || cursorOverlayMode, result?.style || cursorOverlayStyle);
+        } catch (error) {
+          overlayStyleMeta.textContent = String(error.message || error);
+        }
+      }
+
+      overlayColor.addEventListener("change", pushOverlayStyle);
+      overlaySize.addEventListener("input", () => {
+        applyOverlayStyleUi({ ...cursorOverlayStyle, size: Number(overlaySize.value) });
+      });
+      overlaySize.addEventListener("change", pushOverlayStyle);
+      overlayIntensity.addEventListener("input", () => {
+        applyOverlayStyleUi({ ...cursorOverlayStyle, intensity: Number(overlayIntensity.value) });
+      });
+      overlayIntensity.addEventListener("change", pushOverlayStyle);
 
       document.querySelectorAll("[data-preset]").forEach((button) => {
         button.addEventListener("click", async () => {

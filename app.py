@@ -1048,6 +1048,15 @@ def build_generic_writer_blocks(prompt):
     return [
         {"kind": "heading", "level": 1, "text": "업무 문서 초안"},
         {"kind": "paragraph", "text": f"요청 사항\n{prompt}"},
+        {"kind": "heading", "level": 2, "text": "문서 개요"},
+        {
+            "kind": "bullets",
+            "items": [
+                "문서 목적, 대상, 산출물을 먼저 한 줄씩 정리합니다.",
+                "핵심 내용과 실행 항목은 분리해서 읽기 쉽게 배치합니다.",
+                "최종 검토 시 일정, 담당, 후속 조치가 빠지지 않게 점검합니다.",
+            ],
+        },
         {
             "kind": "heading",
             "level": 2,
@@ -1069,6 +1078,146 @@ def build_generic_writer_blocks(prompt):
                 ["1", "초안 검토", "즉시"],
                 ["2", "의견 반영", "협의 후"],
                 ["3", "최종 확정", "승인 후"],
+            ],
+        },
+    ]
+
+
+def build_technical_report_blocks(prompt):
+    topic = re.sub(r"\s+", " ", prompt).strip() or "기술 검토 주제"
+    return [
+        {"kind": "heading", "level": 1, "text": "기술문서 초안"},
+        {"kind": "paragraph", "text": f"문서 주제\n{topic}"},
+        {"kind": "heading", "level": 2, "text": "1. 목적"},
+        {
+            "kind": "paragraph",
+            "text": "본 문서는 시험 또는 검토 목적, 대상 시스템, 기대 산출물을 명확히 정의하기 위한 초안입니다.",
+        },
+        {"kind": "heading", "level": 2, "text": "2. 범위"},
+        {
+            "kind": "bullets",
+            "items": [
+                "대상 장비, 소프트웨어 버전, 적용 조건을 구분합니다.",
+                "문서에서 다루는 항목과 제외하는 항목을 함께 적습니다.",
+                "재현 가능한 환경 정보는 별도 표로 남깁니다.",
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "3. 용어 및 약어"},
+        {
+            "kind": "table",
+            "headers": ["용어", "설명"],
+            "rows": [
+                ["용어 1", "핵심 개념 설명"],
+                ["약어 1", "약어의 전체 명칭과 의미"],
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "4. 실험 환경 및 기본 설정"},
+        {
+            "kind": "table",
+            "headers": ["구분", "내용", "비고"],
+            "rows": [
+                ["테스트 대상", "장비 또는 시스템명", "버전 기입"],
+                ["환경", "네트워크/OS/설정 값", "재현 조건"],
+                ["도구", "사용한 툴과 스크립트", "필수 여부"],
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "5. 결과 및 해석"},
+        {
+            "kind": "numbered",
+            "items": [
+                "실험 결과를 정량 값과 함께 먼저 요약합니다.",
+                "예상과 다른 결과가 나온 원인 후보를 분리해 적습니다.",
+                "재시험 필요 여부와 다음 액션을 명확히 남깁니다.",
+            ],
+        },
+    ]
+
+
+def build_comparison_blocks(prompt):
+    topic = re.sub(r"\s+", " ", prompt).strip() or "비교 대상"
+    return [
+        {"kind": "heading", "level": 1, "text": "비교표 초안"},
+        {"kind": "paragraph", "text": f"비교 주제\n{topic}"},
+        {"kind": "heading", "level": 2, "text": "요약"},
+        {
+            "kind": "bullets",
+            "items": [
+                "성공/실패 또는 우수/보통/미흡처럼 판정 기준을 먼저 적습니다.",
+                "정량 지표와 한 줄 결론을 함께 제시합니다.",
+                "최종 선택 시 runtime, 품질, 안정성을 따로 봅니다.",
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "정량 비교"},
+        {
+            "kind": "table",
+            "headers": ["대상", "기준", "성능", "비고", "판정"],
+            "rows": [
+                ["안 1", "기준값", "측정값", "특징 요약", "검토"],
+                ["안 2", "기준값", "측정값", "특징 요약", "검토"],
+                ["안 3", "기준값", "측정값", "특징 요약", "검토"],
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "한 줄 결론"},
+        {
+            "kind": "paragraph",
+            "text": "이번 조건에서 가장 적합한 대안과 그 이유를 한 문단으로 정리합니다.",
+        },
+    ]
+
+
+def build_paper_blocks(prompt):
+    topic = re.sub(r"\s+", " ", prompt).strip() or "연구 주제"
+    return [
+        {"kind": "heading", "level": 1, "text": topic},
+        {
+            "kind": "paragraph",
+            "text": "Key Words : 핵심 키워드 1, 핵심 키워드 2, 핵심 키워드 3",
+        },
+        {"kind": "heading", "level": 2, "text": "목차"},
+        {
+            "kind": "paragraph",
+            "text": "Ⅰ. 서론   Ⅱ. 방법 또는 비교 대상   Ⅲ. 실험 결과 및 분석   Ⅳ. 결론",
+        },
+        {"kind": "heading", "level": 2, "text": "Ⅰ. 서론"},
+        {
+            "kind": "paragraph",
+            "text": "연구 배경, 문제 정의, 기존 방법의 한계, 본 문서가 다루는 핵심 비교 관점을 서론에서 정리합니다.",
+        },
+        {"kind": "heading", "level": 2, "text": "Ⅱ. 방법 또는 비교 대상"},
+        {
+            "kind": "numbered",
+            "items": [
+                "대상 방법 1의 핵심 원리와 장단점을 정리합니다.",
+                "대상 방법 2의 핵심 원리와 장단점을 정리합니다.",
+                "비교 지표와 실험 조건을 명시합니다.",
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "Ⅲ. 실험 결과 및 분석"},
+        {
+            "kind": "table",
+            "headers": ["항목", "조건", "결과", "해석"],
+            "rows": [
+                ["저부하", "조건 기입", "결과 기입", "의미 요약"],
+                ["중부하", "조건 기입", "결과 기입", "의미 요약"],
+                ["고부하", "조건 기입", "결과 기입", "의미 요약"],
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "Ⅳ. 결론"},
+        {
+            "kind": "bullets",
+            "items": [
+                "핵심 결과를 다시 한 번 짧게 요약합니다.",
+                "실무 또는 연구 관점에서의 의미를 분리해 적습니다.",
+                "향후 검증할 항목과 남은 한계를 정리합니다.",
+            ],
+        },
+        {"kind": "heading", "level": 2, "text": "참고문헌"},
+        {
+            "kind": "numbered",
+            "items": [
+                "참고문헌 1",
+                "참고문헌 2",
+                "참고문헌 3",
             ],
         },
     ]
@@ -1620,6 +1769,27 @@ def fallback_plan(user_prompt, document, workspace, reason, search_results=None)
         return {
             "reply": "연구노트 초안을 생성했습니다. 오프라인 플래너를 사용했습니다.",
             "operations": [{"type": "set_document_blocks", "blocks": blocks}],
+            "meta": {"planner": "fallback", "reason": reason, "search_results": len(search_results or [])},
+        }
+
+    if any(keyword in prompt for keyword in ("기술문서", "기술 문서", "시험보고서", "시험 절차서", "설계서", "사용자 가이드", "user guide")):
+        return {
+            "reply": "기술문서 구조 초안을 생성했습니다. 오프라인 플래너를 사용했습니다.",
+            "operations": [{"type": "set_document_blocks", "blocks": build_technical_report_blocks(prompt)}],
+            "meta": {"planner": "fallback", "reason": reason, "search_results": len(search_results or [])},
+        }
+
+    if any(keyword in prompt for keyword in ("비교표", "비교 표", "비교분석", "비교 분석", "정량 비교")):
+        return {
+            "reply": "비교표 구조 초안을 생성했습니다. 오프라인 플래너를 사용했습니다.",
+            "operations": [{"type": "set_document_blocks", "blocks": build_comparison_blocks(prompt)}],
+            "meta": {"planner": "fallback", "reason": reason, "search_results": len(search_results or [])},
+        }
+
+    if any(keyword in prompt for keyword in ("논문", "학회", "저널", "초록", "abstract")):
+        return {
+            "reply": "논문형 문서 뼈대를 생성했습니다. 오프라인 플래너를 사용했습니다.",
+            "operations": [{"type": "set_document_blocks", "blocks": build_paper_blocks(prompt)}],
             "meta": {"planner": "fallback", "reason": reason, "search_results": len(search_results or [])},
         }
 

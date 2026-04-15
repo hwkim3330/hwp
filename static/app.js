@@ -154,6 +154,7 @@ const state = {
   currentComputerUsePlan: null,
   currentComputerUseSessionId: "",
   computerUseBusy: false,
+  currentAgentTaskId: "",
   liveRoute: "auto",
   commandHistory: [],
   autosavedAt: 0,
@@ -1276,6 +1277,9 @@ function updateRunbook(events = []) {
   const browserProgress = activeBrowser ? summarizeComputerUseProgress(activeBrowser) : null;
   const parts = [];
   parts.push(`라우트 ${state.liveRoute || "auto"}`);
+  if (state.currentAgentTaskId) {
+    parts.push(`작업 ${state.currentAgentTaskId.slice(0, 8)}`);
+  }
   if (latestPlan?.payload?.goal) {
     parts.push(`브라우저 ${String(latestPlan.payload.goal).slice(0, 36)}`);
   }
@@ -1302,7 +1306,8 @@ async function refreshRuntimeRegistry() {
     renderRegistryRows(elements.permissionRegistry, data.runtime?.permissions, "권한 정보 없음");
     if (elements.sessionMeta) {
       const runtimeSession = data.runtime?.session || {};
-      elements.sessionMeta.textContent = `세션: ${runtimeSession.id || "-"} | 이벤트: ${runtimeSession.eventCount || 0}`;
+      const activeTasks = data.runtime?.agentTasks?.active ?? 0;
+      elements.sessionMeta.textContent = `세션: ${runtimeSession.id || "-"} | 이벤트: ${runtimeSession.eventCount || 0} | 작업 ${activeTasks}`;
     }
     if (elements.computerUseMeta) {
       elements.computerUseMeta.textContent = `browser-use reference: ${data.runtime?.computerUse?.reference?.detail || "-"} | sessions ${data.runtime?.computerUse?.sessions ?? 0}`;
@@ -1602,6 +1607,45 @@ async function runComputerUseStep(sessionId, stepIndex) {
   } finally {
     state.computerUseBusy = false;
     setComputerUseProgress(state.currentComputerUsePlan);
+  }
+}
+
+async function fetchAgentTask(taskId) {
+  const response = await fetch(`/api/agent-task/${encodeURIComponent(taskId)}`, { cache: "no-store" });
+  const result = await response.json();
+  if (!result.ok) {
+    throw new Error(result.detail || result.error || "agent task unavailable");
+  }
+  return result.task;
+}
+
+function summarizeTaskCheckpoint(task) {
+  const checkpoints = Array.isArray(task?.checkpoints) ? task.checkpoints : [];
+  const latest = checkpoints[checkpoints.length - 1] || null;
+  return latest?.detail || task?.status || "대기";
+}
+
+async function waitForAgentTask(taskId) {
+  for (;;) {
+    const task = await fetchAgentTask(taskId);
+    const checkpoints = Array.isArray(task?.checkpoints) ? task.checkpoints.length : 0;
+    if (elements.liveActivityProgress) {
+      elements.liveActivityProgress.textContent = `시도 ${task.attempts || 0}/${task.max_attempts || 3} · 체크포인트 ${checkpoints}`;
+    }
+    if (elements.liveActivityDetail) {
+      elements.liveActivityDetail.textContent = summarizeTaskCheckpoint(task);
+    }
+    if (elements.dashboardPlan) {
+      elements.dashboardPlan.textContent = `상태 ${task.status} · 시도 ${task.attempts || 0}/${task.max_attempts || 3}`;
+    }
+    updateRunbook(window.__lastSessionEvents || []);
+    if (task.status === "completed") {
+      return task;
+    }
+    if (task.status === "failed") {
+      throw new Error(task.error || "agent task failed");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 900));
   }
 }
 
@@ -4358,7 +4402,7 @@ async function runAgent() {
 
   setBadge("계획 생성 중");
   setLiveRoute("document", prompt);
-  setStatus("에이전트가 문서 스냅샷을 읽고 작업 계획을 생성하는 중입니다.");
+  setStatus("에이전트 작업을 시작합니다.", "작업 루프와 체크포인트를 생성하는 중입니다.");
   elements.runAgent.disabled = true;
 
   try {
@@ -4374,7 +4418,7 @@ async function runAgent() {
       },
       slides: state.slides,
     };
-    const response = await fetch("/api/plan", {
+    const response = await fetch("/api/agent-task/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -4383,12 +4427,23 @@ async function runAgent() {
     if (!result.ok) {
       throw new Error(result.detail || result.error || "agent request failed");
     }
-
-    const plan = result.plan;
+    const taskId = result.task?.id;
+    if (!taskId) {
+      throw new Error("agent task id missing");
+    }
+    state.currentAgentTaskId = taskId;
+    if (elements.liveActivityProgress) {
+      elements.liveActivityProgress.textContent = `작업 ${taskId.slice(0, 8)} 시작`;
+    }
+    if (elements.liveActivityDetail) {
+      elements.liveActivityDetail.textContent = "계획 생성 중 · 첫 체크포인트를 기다리는 중";
+    }
+    const task = await waitForAgentTask(taskId);
+    const plan = task.plan;
     elements.planBox.textContent = JSON.stringify(plan, null, 2);
-    elements.plannerMeta.textContent = `플래너: ${plan.meta?.planner || "-"}${plan.meta?.reason ? ` | 사유: ${plan.meta.reason}` : ""}${plan.meta?.search_results ? ` | 검색 결과: ${plan.meta.search_results}` : ""}`;
+    elements.plannerMeta.textContent = `플래너: ${plan.meta?.planner || "-"}${plan.meta?.reason ? ` | 사유: ${plan.meta.reason}` : ""}${plan.meta?.search_results ? ` | 검색 결과: ${plan.meta.search_results}` : ""}${task.attempts ? ` | 시도: ${task.attempts}` : ""}`;
     if (elements.dashboardPlan) {
-      elements.dashboardPlan.textContent = `${plan.reply || "작업 완료"} · 작업 ${plan.operations.filter((item) => item.type !== "no_op").length}개`;
+      elements.dashboardPlan.textContent = `${plan.reply || "작업 완료"} · 작업 ${plan.operations.filter((item) => item.type !== "no_op").length}개 · 체크포인트 ${(task.checkpoints || []).length}`;
     }
 
     for (const operation of plan.operations) {
@@ -4413,7 +4468,7 @@ async function runAgent() {
     setBadge("적용 완료");
     setStatus(
       "에이전트 작업이 적용되었습니다.",
-      `실행된 작업 수: ${plan.operations.filter((item) => item.type !== "no_op").length}`,
+      `실행된 작업 수: ${plan.operations.filter((item) => item.type !== "no_op").length} · 시도 ${task.attempts || 0}`,
     );
     await refreshSessionLog();
   } catch (error) {
@@ -4421,6 +4476,7 @@ async function runAgent() {
     setBadge("실패");
     setStatus("에이전트 실행 실패", String(error.message || error));
   } finally {
+    state.currentAgentTaskId = "";
     elements.runAgent.disabled = false;
   }
 }

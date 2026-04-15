@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import uuid
 from html.parser import HTMLParser
@@ -51,6 +52,8 @@ USER_AGENT = "hwp/1.0 (+https://github.com/hwkim3330/hwp)"
 SESSION_ID = f"session-{int(time.time())}"
 SESSION_EVENTS = []
 MAX_SESSION_EVENTS = 120
+AGENT_TASKS = {}
+AGENT_TASK_LOCK = threading.Lock()
 ONLYOFFICE_SESSIONS = {}
 BROWSER_USE_REFERENCE_DIR = Path(os.environ.get("BROWSER_USE_REFERENCE_DIR", str(Path.home() / "office-agent-sources" / "browser-use"))).expanduser()
 BROWSER_USE_SESSIONS = {}
@@ -230,6 +233,143 @@ def log_session_event(event_type, payload):
         }
     )
     del SESSION_EVENTS[:-MAX_SESSION_EVENTS]
+
+
+def _task_checkpoint(stage, attempt=0, detail="", payload=None):
+    return {
+        "ts": int(time.time()),
+        "stage": stage,
+        "attempt": attempt,
+        "detail": detail,
+        "payload": payload or {},
+    }
+
+
+def create_agent_task(prompt, model_profile, document, workspace):
+    task_id = uuid.uuid4().hex
+    task = {
+        "id": task_id,
+        "prompt": prompt[:800],
+        "model_profile": model_profile,
+        "mode": str(workspace.get("mode", "writer")),
+        "status": "queued",
+        "created_at": int(time.time()),
+        "updated_at": int(time.time()),
+        "attempts": 0,
+        "max_attempts": 3,
+        "checkpoints": [
+            _task_checkpoint(
+                "queued",
+                detail="작업이 대기열에 등록되었습니다.",
+                payload={
+                    "paragraphs": len(document.get("paragraphs", []) or []),
+                    "sheet_rows": len((workspace.get("sheet", {}) or {}).get("rows", []) or []),
+                    "slides": len(workspace.get("slides", []) or []),
+                },
+            )
+        ],
+        "plan": None,
+        "error": "",
+    }
+    with AGENT_TASK_LOCK:
+        AGENT_TASKS[task_id] = task
+        overflow = len(AGENT_TASKS) - 20
+        if overflow > 0:
+            for stale_id in list(AGENT_TASKS.keys())[:overflow]:
+                if stale_id != task_id:
+                    AGENT_TASKS.pop(stale_id, None)
+    return task
+
+
+def get_agent_task(task_id):
+    with AGENT_TASK_LOCK:
+        task = AGENT_TASKS.get(task_id)
+        return json.loads(json.dumps(task)) if task else None
+
+
+def update_agent_task(task_id, **changes):
+    with AGENT_TASK_LOCK:
+        task = AGENT_TASKS.get(task_id)
+        if not task:
+            return None
+        task.update(changes)
+        task["updated_at"] = int(time.time())
+        return task
+
+
+def append_agent_task_checkpoint(task_id, stage, attempt=0, detail="", payload=None):
+    with AGENT_TASK_LOCK:
+        task = AGENT_TASKS.get(task_id)
+        if not task:
+            return None
+        task.setdefault("checkpoints", []).append(_task_checkpoint(stage, attempt=attempt, detail=detail, payload=payload))
+        task["updated_at"] = int(time.time())
+        return task
+
+
+def run_agent_task(task_id, prompt, model_profile, document, workspace):
+    update_agent_task(task_id, status="running")
+    append_agent_task_checkpoint(task_id, "running", detail="계획 생성을 시작합니다.")
+    plan = None
+    last_error = ""
+    for attempt in range(1, 4):
+        update_agent_task(task_id, attempts=attempt)
+        append_agent_task_checkpoint(task_id, "attempt_start", attempt=attempt, detail=f"{attempt}차 시도 시작")
+        try:
+            llm_document = {**document, **workspace}
+            plan, search_results, memory_results = call_llm(prompt, llm_document, model_profile)
+            plan = finalize_plan(workspace["mode"], prompt, document, workspace, plan)
+            meta = {"planner": "llm", "model_profile": model_profile, "attempt": attempt}
+            if search_results:
+                meta["search_results"] = len(search_results)
+            if memory_results:
+                meta["memory_results"] = len(memory_results)
+            plan = {**plan, "meta": meta}
+            append_agent_task_checkpoint(
+                task_id,
+                "attempt_success",
+                attempt=attempt,
+                detail=f"{attempt}차 시도 성공",
+                payload={"operations": len([item for item in plan.get("operations", []) if item.get("type") != "no_op"])},
+            )
+            break
+        except (error.HTTPError, error.URLError, TimeoutError, ValueError, KeyError, json.JSONDecodeError) as exc:
+            last_error = str(exc)
+            append_agent_task_checkpoint(task_id, "attempt_error", attempt=attempt, detail=last_error[:280])
+    if plan is None:
+        fallback_results = []
+        if should_use_web_search(prompt):
+            try:
+                fallback_results = web_search(prompt, max_results=5)
+            except Exception:
+                fallback_results = []
+        plan = fallback_plan(prompt, document, workspace, last_error or "task_failed", fallback_results)
+        append_agent_task_checkpoint(
+            task_id,
+            "fallback",
+            attempt=min(3, int(get_agent_task(task_id).get("attempts", 0) or 0)),
+            detail="LLM 실패 후 fallback 계획으로 전환",
+            payload={"reason": last_error[:280], "search_results": len(fallback_results)},
+        )
+    remember_memory("agent", f"에이전트 요청 · {workspace['mode']}", prompt, {"mode": workspace["mode"], "task_id": task_id})
+    log_session_event(
+        "agent_task",
+        {
+            "task_id": task_id,
+            "mode": workspace["mode"],
+            "prompt": prompt[:400],
+            "planner": plan.get("meta", {}).get("planner", "unknown"),
+            "attempts": int(get_agent_task(task_id).get("attempts", 0) or 0),
+        },
+    )
+    update_agent_task(task_id, status="completed", plan=plan, error=last_error)
+    append_agent_task_checkpoint(
+        task_id,
+        "completed",
+        attempt=int(get_agent_task(task_id).get("attempts", 0) or 0),
+        detail="작업 계획 생성 완료",
+        payload={"planner": plan.get("meta", {}).get("planner", "unknown")},
+    )
 
 
 def mempalace_reference_status():
@@ -2189,8 +2329,12 @@ def runtime_registry():
     mlx_status = mlx_runtime_status()
     gemini_status = gemini_cli_status()
     mcp_status = mcp_server_status()
+    active_tasks = 0
+    with AGENT_TASK_LOCK:
+        active_tasks = len([item for item in AGENT_TASKS.values() if item.get("status") in {"queued", "running"}])
     return {
         "session": {"id": SESSION_ID, "eventCount": len(SESSION_EVENTS)},
+        "agentTasks": {"active": active_tasks, "total": len(AGENT_TASKS)},
         "llm": {"model": LLM_MODEL, "baseUrl": LLM_BASE_URL, "ollama": is_ollama_base_url()},
         "mlxExperimental": mlx_status,
         "geminiCli": gemini_status,
@@ -2351,6 +2495,14 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/session":
             self._send_json({"ok": True, "session": session_snapshot()})
+            return
+        if self.path.startswith("/api/agent-task/"):
+            task_id = self.path.rsplit("/", 1)[-1]
+            task = get_agent_task(task_id)
+            if not task:
+                self._send_json({"ok": False, "error": "task_not_found"}, status=HTTPStatus.NOT_FOUND)
+                return
+            self._send_json({"ok": True, "task": task})
             return
         if self.path == "/api/computer-use/sessions":
             self._send_json({"ok": True, "sessions": list_browser_use_sessions()})
@@ -2603,6 +2755,33 @@ class Handler(SimpleHTTPRequestHandler):
                 )
             except Exception as exc:
                 self._send_json({"ok": False, "error": "gemini_cli_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if self.path == "/api/agent-task/start":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                payload = json.loads(body or "{}")
+                prompt = str(payload.get("prompt", "")).strip()
+                model_profile = str(payload.get("modelProfile", "balanced")).strip() or "balanced"
+                document = payload.get("document", {})
+                workspace = {
+                    "mode": payload.get("mode", "writer"),
+                    "noteText": payload.get("noteText", ""),
+                    "sheet": payload.get("sheet", {}),
+                    "slides": payload.get("slides", []),
+                }
+                if not prompt:
+                    raise ValueError("prompt is required")
+                task = create_agent_task(prompt, model_profile, document, workspace)
+                worker = threading.Thread(
+                    target=run_agent_task,
+                    args=(task["id"], prompt, model_profile, document, workspace),
+                    daemon=True,
+                )
+                worker.start()
+                self._send_json({"ok": True, "task": get_agent_task(task["id"])})
+            except Exception as exc:
+                self._send_json({"ok": False, "error": "agent_task_start_failed", "detail": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         if self.path != "/api/plan":
             self._send_json({"ok": False, "error": "not found"}, status=HTTPStatus.NOT_FOUND)

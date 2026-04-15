@@ -164,6 +164,13 @@
           </div>
           <div class="command-inline-stack">
             <div class="prompt-list">
+              <button id="action-research-note" class="prompt-chip">연구노트</button>
+              <button id="action-research-complete" class="prompt-chip">연구노트 완성</button>
+              <button id="action-minutes" class="prompt-chip">회의록</button>
+              <button id="action-report" class="prompt-chip">보고서</button>
+              <button id="action-slides" class="prompt-chip">슬라이드화</button>
+            </div>
+            <div class="prompt-list">
               <button class="prompt-chip operator-profile" data-profile="writer">작성 중심</button>
               <button class="prompt-chip operator-profile" data-profile="research">조사 중심</button>
               <button class="prompt-chip operator-profile" data-profile="automation">자동화 중심</button>
@@ -203,7 +210,7 @@
         </div>
 
         <section id="workspace-writer" class="workspace-panel active">
-          <div class="tool-head">
+          <div class="tool-head writer-toolbar">
             <h3>Writer</h3>
             <div class="button-row">
               <button id="insert-heading" class="secondary">제목</button>
@@ -215,25 +222,27 @@
             </div>
           </div>
           <div id="pages" class="pages"></div>
-          <div class="writer-flow-shell">
-            <div class="tool-head">
+          <details class="writer-flow-shell writer-section-card" open>
+            <summary class="tool-head writer-section-summary">
               <h3>문서 흐름</h3>
               <span class="tool-note">실제 내보내기 순서 기준</span>
-            </div>
+            </summary>
             <div id="writer-flow" class="writer-flow">문서 흐름을 불러오는 중...</div>
-          </div>
-          <div class="writer-objects-shell">
-            <div class="tool-head">
+          </details>
+          <details class="writer-objects-shell writer-section-card">
+            <summary class="tool-head writer-section-summary">
               <h3>표 / 목록 편집</h3>
-            </div>
+              <span class="tool-note">필요할 때만 편집</span>
+            </summary>
             <div id="writer-objects" class="writer-objects">표와 목록이 여기에 표시됩니다.</div>
-          </div>
-          <div class="writer-editor-shell">
-            <div class="tool-head">
+          </details>
+          <details class="writer-editor-shell writer-section-card">
+            <summary class="tool-head writer-section-summary">
               <h3>문단 편집</h3>
-            </div>
+              <span class="tool-note">선택 문단 직접 수정</span>
+            </summary>
             <div id="writer-editor" class="writer-editor">문단을 불러오는 중...</div>
-          </div>
+          </details>
         </section>
 
         <section id="workspace-notes" class="workspace-panel">

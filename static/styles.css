@@ -502,6 +502,18 @@ input {
     linear-gradient(135deg, rgba(10, 132, 255, 0.03), rgba(48, 176, 199, 0.03));
 }
 
+.writer-toolbar {
+  position: sticky;
+  top: 188px;
+  z-index: 1;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(14px);
+}
+
 .mode-tabs {
   display: none;
 }
@@ -629,6 +641,40 @@ input {
   cursor: pointer;
   font-weight: 600;
   color: var(--ink);
+}
+
+.writer-section-card {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.writer-section-summary {
+  list-style: none;
+  cursor: pointer;
+  margin: 0;
+  padding: 14px 16px;
+}
+
+.writer-section-summary::-webkit-details-marker {
+  display: none;
+}
+
+.writer-section-summary::after {
+  content: "+";
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.writer-section-card[open] .writer-section-summary::after {
+  content: "−";
+}
+
+.writer-section-card > :not(summary) {
+  padding: 0 16px 16px;
 }
 
 .drawer-card > summary::-webkit-details-marker {
@@ -1120,20 +1166,20 @@ button.secondary {
 }
 
 .writer-editor-shell {
-  margin-top: 18px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.78);
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .writer-flow-shell,
 .writer-objects-shell {
-  margin-top: 18px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.72);
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .writer-flow {
@@ -1468,6 +1514,11 @@ textarea {
 
   .command-deck {
     position: static;
+  }
+
+  .writer-toolbar {
+    position: static;
+    top: auto;
   }
 
   .registry-grid {
